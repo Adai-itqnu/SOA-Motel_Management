@@ -1,0 +1,114 @@
+events {
+    worker_connections 1024;
+}
+
+http {
+    # Rate limiting
+    limit_req_zone $binary_remote_addr zone=api_limit:10m rate=10r/s;
+
+    # Upstream cho auth-service - lấy từ Consul
+    upstream auth_service {
+        least_conn;
+        {{range service "auth-service"}}
+        server {{.Address}}:{{.Port}};
+        {{else}}
+        # Fallback nếu không tìm thấy trong Consul
+        server auth-service:5001;
+        {{end}}
+    }
+
+    # Upstream cho room-service - lấy từ Consul
+    upstream room_service {
+        least_conn;
+        {{range service "room-service"}}
+        server {{.Address}}:{{.Port}};
+        {{else}}
+        # Fallback nếu không tìm thấy trong Consul
+        server room-service:5002;
+        {{end}}
+    }
+
+    # Upstream cho frontend
+    upstream frontend_service {
+        server frontend:5000;
+    }
+
+    server {
+        listen 80;
+        server_name localhost;
+
+        # Frontend API (set-session endpoint)
+        location /api/set-session {
+            proxy_pass http://frontend_service;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+        }
+
+        # Frontend
+        location / {
+            proxy_pass http://frontend_service;
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection 'upgrade';
+            proxy_set_header Host $host;
+            proxy_cache_bypass $http_upgrade;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        }
+
+        # Auth Service API
+        location /api/auth {
+            limit_req zone=api_limit burst=20 nodelay;
+            
+            proxy_pass http://auth_service;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            # Nginx tự động forward tất cả headers từ client (bao gồm Content-Type)
+            
+            # CORS headers
+            add_header 'Access-Control-Allow-Origin' '*' always;
+            add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, DELETE, OPTIONS' always;
+            add_header 'Access-Control-Allow-Headers' 'Authorization, Content-Type' always;
+            
+            if ($request_method = 'OPTIONS') {
+                return 204;
+            }
+        }
+
+        # Room Service API
+        location /api/rooms {
+            limit_req zone=api_limit burst=20 nodelay;
+            
+            proxy_pass http://room_service;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            # Nginx tự động forward tất cả headers từ client (bao gồm Content-Type)
+            
+            # CORS headers
+            add_header 'Access-Control-Allow-Origin' '*' always;
+            add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, DELETE, OPTIONS' always;
+            add_header 'Access-Control-Allow-Headers' 'Authorization, Content-Type' always;
+            
+            if ($request_method = 'OPTIONS') {
+                return 204;
+            }
+        }
+
+        # Health check endpoint
+        location /health {
+            access_log off;
+            return 200 "healthy\n";
+            add_header Content-Type text/plain;
+        }
+    }
+}
+

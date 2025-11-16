@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Trang chủ - Phòng trọ</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #f5f7fa;
+        }
+
+        .navbar {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 15px 0;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        .navbar-content {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .navbar-brand {
+            font-size: 24px;
+            font-weight: 600;
+        }
+
+        .navbar-user {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .user-info {
+            text-align: right;
+        }
+
+        .user-name {
+            font-weight: 600;
+        }
+
+        .user-role {
+            font-size: 12px;
+            opacity: 0.8;
+        }
+
+        .btn-logout {
+            background: rgba(255,255,255,0.2);
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .btn-logout:hover {
+            background: rgba(255,255,255,0.3);
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 30px auto;
+            padding: 0 20px;
+        }
+
+        .page-header {
+            margin-bottom: 30px;
+        }
+
+        .page-header h1 {
+            color: #333;
+            font-size: 32px;
+            margin-bottom: 10px;
+        }
+
+        .page-header p {
+            color: #666;
+        }
+
+        .filters {
+            background: white;
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+            margin-bottom: 30px;
+        }
+
+        .filter-group {
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+        }
+
+        .filter-item {
+            flex: 1;
+            min-width: 200px;
+        }
+
+        .filter-item label {
+            display: block;
+            margin-bottom: 5px;
+            color: #555;
+            font-weight: 500;
+        }
+
+        .filter-item input, .filter-item select {
+            width: 100%;
+            padding: 10px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 14px;
+        }
+
+        .filter-item input:focus, .filter-item select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .rooms-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 25px;
+        }
+
+        .room-card {
+            background: white;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+            transition: transform 0.3s, box-shadow 0.3s;
+        }
+
+        .room-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 5px 20px rgba(0,0,0,0.1);
+        }
+
+        .room-image {
+            width: 100%;
+            height: 200px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 60px;
+        }
+
+        .room-content {
+            padding: 20px;
+        }
+
+        .room-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: start;
+            margin-bottom: 15px;
+        }
+
+        .room-name {
+            font-size: 20px;
+            font-weight: 600;
+            color: #333;
+        }
+
+        .room-status {
+            padding: 5px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .status-available {
+            background: #e8f5e9;
+            color: #2e7d32;
+        }
+
+        .room-info {
+            margin-bottom: 15px;
+        }
+
+        .room-info-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #f0f0f0;
+        }
+
+        .room-info-item:last-child {
+            border-bottom: none;
+        }
+
+        .room-info-label {
+            color: #666;
+        }
+
+        .room-info-value {
+            font-weight: 600;
+            color: #333;
+        }
+
+        .room-price {
+            font-size: 24px;
+            font-weight: 700;
+            color: #667eea;
+            text-align: center;
+            padding: 15px 0;
+            border-top: 2px solid #f0f0f0;
+        }
+
+        .room-description {
+            color: #666;
+            font-size: 14px;
+            margin-top: 10px;
+            line-height: 1.6;
+        }
+
+        .no-rooms {
+            text-align: center;
+            padding: 60px 20px;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        }
+
+        .no-rooms-icon {
+            font-size: 80px;
+            margin-bottom: 20px;
+        }
+
+        .no-rooms h3 {
+            color: #333;
+            font-size: 24px;
+            margin-bottom: 10px;
+        }
+
+        .no-rooms p {
+            color: #666;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 60px 20px;
+        }
+
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar">
+        <div class="navbar-content">
+            <div class="navbar-brand">🏠 Quản lý Nhà Trọ</div>
+            <div class="navbar-user">
+                <div class="user-info">
+                    <div class="user-name" id="userName"></div>
+                    <div class="user-role">Người dùng</div>
+                </div>
+                <button class="btn-logout" onclick="logout()">Đăng xuất</button>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container">
+        <div class="page-header">
+            <h1>Danh sách phòng trống</h1>
+            <p>Tìm phòng trọ phù hợp với nhu cầu của bạn</p>
+        </div>
+
+        <div class="filters">
+            <div class="filter-group">
+                <div class="filter-item">
+                    <label for="searchInput">Tìm kiếm</label>
+                    <input type="text" id="searchInput" placeholder="Nhập tên phòng...">
+                </div>
+                <div class="filter-item">
+                    <label for="sortBy">Sắp xếp theo</label>
+                    <select id="sortBy">
+                        <option value="name">Tên phòng</option>
+                        <option value="price-asc">Giá thấp đến cao</option>
+                        <option value="price-desc">Giá cao đến thấp</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <div id="loading" class="loading">
+            <div class="spinner"></div>
+            <p>Đang tải danh sách phòng...</p>
+        </div>
+
+        <div id="roomsGrid" class="rooms-grid"></div>
+    </div>
+
+    <script>
+        const API_GATEWAY = '{{ api_gateway }}';
+        let allRooms = [];
+
+        // Check authentication
+        function checkAuth() {
+            const token = localStorage.getItem('token');
+            const user = JSON.parse(localStorage.getItem('user') || '{}');
+            
+            if (!token) {
+                window.location.href = '/login';
+                return;
+            }
+            
+            document.getElementById('userName').textContent = user.name || user.username;
+        }
+
+        // Logout
+        function logout() {
+            localStorage.removeItem('token');
+            localStorage.removeItem('user');
+            window.location.href = '/login';
+        }
+
+        // Format price
+        function formatPrice(price) {
+            return new Intl.NumberFormat('vi-VN', {
+                style: 'currency',
+                currency: 'VND'
+            }).format(price);
+        }
+
+        // Render rooms
+        function renderRooms(rooms) {
+            const grid = document.getElementById('roomsGrid');
+            
+            if (rooms.length === 0) {
+                grid.innerHTML = `
+                    <div class="no-rooms">
+                        <div class="no-rooms-icon">🏠</div>
+                        <h3>Không tìm thấy phòng trống</h3>
+                        <p>Hiện tại không có phòng nào phù hợp với tiêu chí của bạn</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            grid.innerHTML = rooms.map(room => `
+                <div class="room-card">
+                    <div class="room-image">🏠</div>
+                    <div class="room-content">
+                        <div class="room-header">
+                            <div class="room-name">${room.name}</div>
+                            <span class="room-status status-available">Còn trống</span>
+                        </div>
+                        
+                        <div class="room-info">
+                            <div class="room-info-item">
+                                <span class="room-info-label">Loại phòng:</span>
+                                <span class="room-info-value">${room.room_type}</span>
+                            </div>
+                        </div>
+                        
+                        ${room.description ? `
+                            <div class="room-description">${room.description}</div>
+                        ` : ''}
+                        
+                        <div class="room-price">
+                            ${formatPrice(room.price)}/tháng
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        // Load rooms
+        async function loadRooms() {
+            const loading = document.getElementById('loading');
+            const grid = document.getElementById('roomsGrid');
+            
+            loading.style.display = 'block';
+            grid.style.display = 'none';
+            
+            try {
+                const response = await fetch('/api/rooms/available');
+                
+                if (!response.ok) {
+                    throw new Error('Không thể tải danh sách phòng');
+                }
+                
+                const data = await response.json();
+                allRooms = data.rooms;
+                
+                loading.style.display = 'none';
+                grid.style.display = 'grid';
+                
+                filterAndSortRooms();
+            } catch (error) {
+                loading.innerHTML = `
+                    <div style="color: #c33;">
+                        <p>❌ ${error.message}</p>
+                    </div>
+                `;
+            }
+        }
+
+        // Filter and sort
+        function filterAndSortRooms() {
+            const searchText = document.getElementById('searchInput').value.toLowerCase();
+            const sortBy = document.getElementById('sortBy').value;
+            
+            let filtered = allRooms.filter(room => 
+                room.name.toLowerCase().includes(searchText)
+            );
+            
+            // Sort
+            if (sortBy === 'price-asc') {
+                filtered.sort((a, b) => a.price - b.price);
+            } else if (sortBy === 'price-desc') {
+                filtered.sort((a, b) => b.price - a.price);
+            } else {
+                filtered.sort((a, b) => a.name.localeCompare(b.name));
+            }
+            
+            renderRooms(filtered);
+        }
+
+        // Event listeners
+        document.getElementById('searchInput').addEventListener('input', filterAndSortRooms);
+        document.getElementById('sortBy').addEventListener('change', filterAndSortRooms);
+
+        // Initialize
+        checkAuth();
+        loadRooms();
+    </script>
+</body>
+</html>

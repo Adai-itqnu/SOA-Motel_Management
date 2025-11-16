@@ -1,0 +1,837 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Dashboard - Quản lý Nhà Trọ</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #f5f7fa;
+        }
+
+        .navbar {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 15px 0;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        .navbar-content {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 0 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .navbar-brand {
+            font-size: 24px;
+            font-weight: 600;
+        }
+
+        .navbar-user {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .user-info {
+            text-align: right;
+        }
+
+        .user-name {
+            font-weight: 600;
+        }
+
+        .user-role {
+            font-size: 12px;
+            opacity: 0.8;
+        }
+
+        .btn-logout {
+            background: rgba(255,255,255,0.2);
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .btn-logout:hover {
+            background: rgba(255,255,255,0.3);
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 30px auto;
+            padding: 0 20px;
+        }
+
+        .page-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+        }
+
+        .page-title h1 {
+            color: #333;
+            font-size: 32px;
+            margin-bottom: 5px;
+        }
+
+        .page-title p {
+            color: #666;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .stat-card {
+            background: white;
+            padding: 25px;
+            border-radius: 12px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        }
+
+        .stat-card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .stat-icon {
+            font-size: 36px;
+        }
+
+        .stat-label {
+            color: #666;
+            font-size: 14px;
+            margin-bottom: 8px;
+        }
+
+        .stat-value {
+            font-size: 32px;
+            font-weight: 700;
+            color: #333;
+        }
+
+        .stat-change {
+            font-size: 13px;
+            margin-top: 8px;
+        }
+
+        .stat-change.positive {
+            color: #2e7d32;
+        }
+
+        .rooms-section {
+            background: white;
+            padding: 25px;
+            border-radius: 12px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        }
+
+        .section-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .section-title {
+            font-size: 20px;
+            font-weight: 600;
+            color: #333;
+        }
+
+        .filters {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .filter-item input, .filter-item select {
+            padding: 10px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 14px;
+        }
+
+        .filter-item input:focus, .filter-item select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        thead {
+            background: #f8f9fa;
+        }
+
+        th {
+            padding: 15px;
+            text-align: left;
+            font-weight: 600;
+            color: #555;
+            border-bottom: 2px solid #e0e0e0;
+        }
+
+        td {
+            padding: 15px;
+            border-bottom: 1px solid #f0f0f0;
+        }
+
+        tbody tr:hover {
+            background: #f8f9fa;
+        }
+
+        .status-badge {
+            padding: 5px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .status-available {
+            background: #e8f5e9;
+            color: #2e7d32;
+        }
+
+        .status-occupied {
+            background: #fff3e0;
+            color: #f57c00;
+        }
+
+        .status-maintenance {
+            background: #ffebee;
+            color: #c62828;
+        }
+
+        .action-buttons {
+            display: flex;
+            gap: 8px;
+        }
+
+        .btn-action {
+            padding: 6px 12px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+
+        .btn-edit {
+            background: #e3f2fd;
+            color: #1976d2;
+        }
+
+        .btn-edit:hover {
+            background: #bbdefb;
+        }
+
+        .btn-delete {
+            background: #ffebee;
+            color: #c62828;
+        }
+
+        .btn-delete:hover {
+            background: #ffcdd2;
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            animation: fadeIn 0.3s;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        .modal-content {
+            background: white;
+            margin: 50px auto;
+            padding: 30px;
+            width: 90%;
+            max-width: 600px;
+            border-radius: 12px;
+            animation: slideIn 0.3s;
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateY(-50px);
+                opacity: 0;
+            }
+            to {
+                transform: translateY(0);
+                opacity: 1;
+            }
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .modal-title {
+            font-size: 24px;
+            font-weight: 600;
+            color: #333;
+        }
+
+        .close-btn {
+            background: none;
+            border: none;
+            font-size: 28px;
+            cursor: pointer;
+            color: #999;
+        }
+
+        .close-btn:hover {
+            color: #333;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            color: #555;
+            font-weight: 500;
+        }
+
+        .form-group input, .form-group select, .form-group textarea {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 14px;
+            font-family: inherit;
+        }
+
+        .form-group input:focus, .form-group select:focus, .form-group textarea:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .form-actions {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+            margin-top: 25px;
+        }
+
+        .btn-secondary {
+            background: #f5f5f5;
+            color: #666;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+        .btn-secondary:hover {
+            background: #e0e0e0;
+        }
+
+        .alert {
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: none;
+        }
+
+        .alert-success {
+            background: #e8f5e9;
+            color: #2e7d32;
+            border: 1px solid #c8e6c9;
+        }
+
+        .alert-error {
+            background: #ffebee;
+            color: #c62828;
+            border: 1px solid #ffcdd2;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+        }
+
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar">
+        <div class="navbar-content">
+            <div class="navbar-brand">🏠 Admin Dashboard</div>
+            <div class="navbar-user">
+                <div class="user-info">
+                    <div class="user-name" id="userName"></div>
+                    <div class="user-role">Quản trị viên</div>
+                </div>
+                <button class="btn-logout" onclick="logout()">Đăng xuất</button>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container">
+        <div class="page-header">
+            <div class="page-title">
+                <h1>Quản lý Phòng Trọ</h1>
+                <p>Tổng quan và quản lý toàn bộ phòng trọ</p>
+            </div>
+            <button class="btn-primary" onclick="openCreateModal()">+ Thêm phòng mới</button>
+        </div>
+
+        <div class="stats-grid" id="statsGrid">
+            <div class="stat-card">
+                <div class="stat-card-header">
+                    <div class="stat-icon">🏠</div>
+                </div>
+                <div class="stat-label">Tổng số phòng</div>
+                <div class="stat-value" id="totalRooms">-</div>
+            </div>
+
+            <div class="stat-card">
+                <div class="stat-card-header">
+                    <div class="stat-icon">✅</div>
+                </div>
+                <div class="stat-label">Phòng trống</div>
+                <div class="stat-value" id="availableRooms">-</div>
+            </div>
+
+            <div class="stat-card">
+                <div class="stat-card-header">
+                    <div class="stat-icon">🔑</div>
+                </div>
+                <div class="stat-label">Đã cho thuê</div>
+                <div class="stat-value" id="occupiedRooms">-</div>
+            </div>
+
+            <div class="stat-card">
+                <div class="stat-card-header">
+                    <div class="stat-icon">📊</div>
+                </div>
+                <div class="stat-label">Tỷ lệ lấp đầy</div>
+                <div class="stat-value" id="occupancyRate">-%</div>
+            </div>
+        </div>
+
+        <div class="rooms-section">
+            <div class="section-header">
+                <h2 class="section-title">Danh sách phòng</h2>
+            </div>
+
+            <div class="filters">
+                <div class="filter-item">
+                    <input type="text" id="searchInput" placeholder="Tìm kiếm phòng...">
+                </div>
+                <div class="filter-item">
+                    <select id="statusFilter">
+                        <option value="">Tất cả trạng thái</option>
+                        <option value="available">Còn trống</option>
+                        <option value="occupied">Đã cho thuê</option>
+                        <option value="maintenance">Bảo trì</option>
+                    </select>
+                </div>
+            </div>
+
+            <div id="loading" class="loading">
+                <div class="spinner"></div>
+                <p>Đang tải dữ liệu...</p>
+            </div>
+
+            <table id="roomsTable" style="display: none;">
+                <thead>
+                    <tr>
+                        <th>Mã phòng</th>
+                        <th>Tên phòng</th>
+                        <th>Loại phòng</th>
+                        <th>Giá thuê</th>
+                        <th>Trạng thái</th>
+                        <th>Hành động</th>
+                    </tr>
+                </thead>
+                <tbody id="roomsTableBody"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Modal Add/Edit Room -->
+    <div id="roomModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title" id="modalTitle">Thêm phòng mới</h2>
+                <button class="close-btn" onclick="closeModal()">&times;</button>
+            </div>
+
+            <div id="modalAlert" class="alert"></div>
+
+            <form id="roomForm">
+                <input type="hidden" id="roomId">
+                
+                <div class="form-group">
+                    <label for="roomName">Tên phòng *</label>
+                    <input type="text" id="roomName" required placeholder="VD: Phòng 101">
+                </div>
+
+                <div class="form-group">
+                    <label for="roomType">Loại phòng *</label>
+                    <select id="roomType" required>
+                        <option value="">Chọn loại phòng</option>
+                        <option value="Phòng đơn">Phòng đơn</option>
+                        <option value="Phòng đôi">Phòng đôi</option>
+                        <option value="Phòng VIP">Phòng VIP</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="roomPrice">Giá thuê (VNĐ) *</label>
+                    <input type="number" id="roomPrice" required placeholder="VD: 2000000">
+                </div>
+
+                <div class="form-group">
+                    <label for="roomStatus">Trạng thái</label>
+                    <select id="roomStatus">
+                        <option value="available">Còn trống</option>
+                        <option value="occupied">Đã cho thuê</option>
+                        <option value="maintenance">Bảo trì</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="roomDescription">Mô tả</label>
+                    <textarea id="roomDescription" rows="3" placeholder="Mô tả chi tiết về phòng..."></textarea>
+                </div>
+
+                <div class="form-actions">
+                    <button type="button" class="btn-secondary" onclick="closeModal()">Hủy</button>
+                    <button type="submit" class="btn-primary">Lưu</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        const API_GATEWAY = '{{ api_gateway }}';
+        let allRooms = [];
+        let currentEditId = null;
+
+        // Check auth
+        function checkAuth() {
+            const token = localStorage.getItem('token');
+            const user = JSON.parse(localStorage.getItem('user') || '{}');
+            
+            if (!token || user.role !== 'admin') {
+                window.location.href = '/login';
+                return;
+            }
+            
+            document.getElementById('userName').textContent = user.name || user.username;
+        }
+
+        // Get auth header
+        function getAuthHeader() {
+            return {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${localStorage.getItem('token')}`
+            };
+        }
+
+        // Logout
+        function logout() {
+            localStorage.removeItem('token');
+            localStorage.removeItem('user');
+            window.location.href = '/login';
+        }
+
+        // Format price
+        function formatPrice(price) {
+            return new Intl.NumberFormat('vi-VN', {
+                style: 'currency',
+                currency: 'VND'
+            }).format(price);
+        }
+
+        // Load stats
+        async function loadStats() {
+            try {
+                const response = await fetch('/api/rooms/stats', {
+                    headers: getAuthHeader()
+                });
+                
+                if (!response.ok) throw new Error('Không thể tải thống kê');
+                
+                const data = await response.json();
+                
+                document.getElementById('totalRooms').textContent = data.total;
+                document.getElementById('availableRooms').textContent = data.available;
+                document.getElementById('occupiedRooms').textContent = data.occupied;
+                document.getElementById('occupancyRate').textContent = data.occupancy_rate + '%';
+            } catch (error) {
+                console.error('Error loading stats:', error);
+            }
+        }
+
+        // Load rooms
+        async function loadRooms() {
+            const loading = document.getElementById('loading');
+            const table = document.getElementById('roomsTable');
+            
+            loading.style.display = 'block';
+            table.style.display = 'none';
+            
+            try {
+                const response = await fetch('/api/rooms', {
+                    headers: getAuthHeader()
+                });
+                
+                if (!response.ok) throw new Error('Không thể tải danh sách phòng');
+                
+                const data = await response.json();
+                allRooms = data.rooms;
+                
+                loading.style.display = 'none';
+                table.style.display = 'table';
+                
+                filterRooms();
+            } catch (error) {
+                loading.innerHTML = `<p style="color: #c62828;">❌ ${error.message}</p>`;
+            }
+        }
+
+        // Filter rooms
+        function filterRooms() {
+            const searchText = document.getElementById('searchInput').value.toLowerCase();
+            const statusFilter = document.getElementById('statusFilter').value;
+            
+            let filtered = allRooms.filter(room => {
+                const matchSearch = room.name.toLowerCase().includes(searchText);
+                const matchStatus = !statusFilter || room.status === statusFilter;
+                return matchSearch && matchStatus;
+            });
+            
+            renderRooms(filtered);
+        }
+
+        // Render rooms table
+        function renderRooms(rooms) {
+            const tbody = document.getElementById('roomsTableBody');
+            
+            if (rooms.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; padding: 40px;">Không tìm thấy phòng nào</td></tr>';
+                return;
+            }
+            
+            tbody.innerHTML = rooms.map(room => {
+                const statusClass = `status-${room.status}`;
+                const statusText = {
+                    'available': 'Còn trống',
+                    'occupied': 'Đã cho thuê',
+                    'maintenance': 'Bảo trì'
+                }[room.status];
+                
+                return `
+                    <tr>
+                        <td>${room._id}</td>
+                        <td><strong>${room.name}</strong></td>
+                        <td>${room.room_type}</td>
+                        <td>${formatPrice(room.price)}</td>
+                        <td><span class="status-badge ${statusClass}">${statusText}</span></td>
+                        <td>
+                            <div class="action-buttons">
+                                <button class="btn-action btn-edit" onclick="openEditModal('${room._id}')">Sửa</button>
+                                <button class="btn-action btn-delete" onclick="deleteRoom('${room._id}')">Xóa</button>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        // Open create modal
+        function openCreateModal() {
+            currentEditId = null;
+            document.getElementById('modalTitle').textContent = 'Thêm phòng mới';
+            document.getElementById('roomForm').reset();
+            document.getElementById('roomId').value = '';
+            document.getElementById('modalAlert').style.display = 'none';
+            document.getElementById('roomModal').style.display = 'block';
+        }
+
+        // Open edit modal
+        function openEditModal(roomId) {
+            const room = allRooms.find(r => r._id === roomId);
+            if (!room) return;
+            
+            currentEditId = roomId;
+            document.getElementById('modalTitle').textContent = 'Chỉnh sửa phòng';
+            document.getElementById('roomId').value = roomId;
+            document.getElementById('roomName').value = room.name;
+            document.getElementById('roomType').value = room.room_type;
+            document.getElementById('roomPrice').value = room.price;
+            document.getElementById('roomStatus').value = room.status;
+            document.getElementById('roomDescription').value = room.description || '';
+            document.getElementById('modalAlert').style.display = 'none';
+            document.getElementById('roomModal').style.display = 'block';
+        }
+
+        // Close modal
+        function closeModal() {
+            document.getElementById('roomModal').style.display = 'none';
+        }
+
+        // Handle form submit
+        document.getElementById('roomForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const formData = {
+                name: document.getElementById('roomName').value,
+                room_type: document.getElementById('roomType').value,
+                price: parseFloat(document.getElementById('roomPrice').value),
+                status: document.getElementById('roomStatus').value,
+                description: document.getElementById('roomDescription').value
+            };
+            
+            const modalAlert = document.getElementById('modalAlert');
+            
+            try {
+                const url = currentEditId 
+                    ? `/api/rooms/${currentEditId}`
+                    : '/api/rooms';
+                    
+                const method = currentEditId ? 'PUT' : 'POST';
+                
+                const response = await fetch(url, {
+                    method: method,
+                    headers: getAuthHeader(),
+                    body: JSON.stringify(formData)
+                });
+                
+                const data = await response.json();
+                
+                if (!response.ok) throw new Error(data.message);
+                
+                modalAlert.className = 'alert alert-success';
+                modalAlert.textContent = data.message;
+                modalAlert.style.display = 'block';
+                
+                setTimeout(() => {
+                    closeModal();
+                    loadRooms();
+                    loadStats();
+                }, 1500);
+                
+            } catch (error) {
+                modalAlert.className = 'alert alert-error';
+                modalAlert.textContent = error.message;
+                modalAlert.style.display = 'block';
+            }
+        });
+
+        // Delete room
+        async function deleteRoom(roomId) {
+            if (!confirm('Bạn có chắc muốn xóa phòng này?')) return;
+            
+            try {
+                const response = await fetch(`/api/rooms/${roomId}`, {
+                    method: 'DELETE',
+                    headers: getAuthHeader()
+                });
+                
+                const data = await response.json();
+                
+                if (!response.ok) throw new Error(data.message);
+                
+                alert(data.message);
+                loadRooms();
+                loadStats();
+                
+            } catch (error) {
+                alert(error.message);
+            }
+        }
+
+        // Event listeners
+        document.getElementById('searchInput').addEventListener('input', filterRooms);
+        document.getElementById('statusFilter').addEventListener('change', filterRooms);
+
+        // Close modal on outside click
+        window.onclick = function(event) {
+            const modal = document.getElementById('roomModal');
+            if (event.target === modal) {
+                closeModal();
+            }
+        };
+
+        // Initialize
+        checkAuth();
+        loadStats();
+        loadRooms();
+    </script>
+</body>
+</html>
