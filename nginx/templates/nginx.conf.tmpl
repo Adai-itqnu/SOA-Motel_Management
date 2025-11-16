@@ -11,9 +11,6 @@ http {
         least_conn;
         {{range service "auth-service"}}
         server {{.Address}}:{{.Port}};
-        {{else}}
-        # Fallback nếu không tìm thấy trong Consul
-        server auth-service:5001;
         {{end}}
     }
 
@@ -22,9 +19,6 @@ http {
         least_conn;
         {{range service "room-service"}}
         server {{.Address}}:{{.Port}};
-        {{else}}
-        # Fallback nếu không tìm thấy trong Consul
-        server room-service:5002;
         {{end}}
     }
 
@@ -63,13 +57,16 @@ http {
         location /api/auth {
             limit_req zone=api_limit burst=20 nodelay;
             
+            # Error handling - trả về JSON thay vì HTML khi upstream lỗi
+            proxy_intercept_errors on;
+            error_page 502 503 504 = @auth_error;
+            
             proxy_pass http://auth_service;
             proxy_http_version 1.1;
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
             proxy_set_header X-Forwarded-Proto $scheme;
-            # Nginx tự động forward tất cả headers từ client (bao gồm Content-Type)
             
             # CORS headers
             add_header 'Access-Control-Allow-Origin' '*' always;
@@ -80,10 +77,23 @@ http {
                 return 204;
             }
         }
+        
+        # Error handler cho auth service - trả về JSON thay vì HTML
+        location @auth_error {
+            default_type application/json;
+            add_header 'Access-Control-Allow-Origin' '*' always;
+            add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, DELETE, OPTIONS' always;
+            add_header 'Access-Control-Allow-Headers' 'Authorization, Content-Type' always;
+            return 503 '{"error": "Service unavailable", "message": "auth-service is not available. Please check Consul service registration."}';
+        }
 
         # Room Service API
         location /api/rooms {
             limit_req zone=api_limit burst=20 nodelay;
+            
+            # Error handling - trả về JSON thay vì HTML khi upstream lỗi
+            proxy_intercept_errors on;
+            error_page 502 503 504 = @room_error;
             
             proxy_pass http://room_service;
             proxy_http_version 1.1;
@@ -91,7 +101,6 @@ http {
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
             proxy_set_header X-Forwarded-Proto $scheme;
-            # Nginx tự động forward tất cả headers từ client (bao gồm Content-Type)
             
             # CORS headers
             add_header 'Access-Control-Allow-Origin' '*' always;
@@ -101,6 +110,15 @@ http {
             if ($request_method = 'OPTIONS') {
                 return 204;
             }
+        }
+        
+        # Error handler cho room service - trả về JSON thay vì HTML
+        location @room_error {
+            default_type application/json;
+            add_header 'Access-Control-Allow-Origin' '*' always;
+            add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, DELETE, OPTIONS' always;
+            add_header 'Access-Control-Allow-Headers' 'Authorization, Content-Type' always;
+            return 503 '{"error": "Service unavailable", "message": "room-service is not available. Please check Consul service registration."}';
         }
 
         # Health check endpoint

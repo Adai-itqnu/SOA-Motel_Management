@@ -11,7 +11,45 @@ echo "Consul is ready"
 
 # Chờ services đăng ký với Consul
 echo "Waiting for services to register with Consul..."
-sleep 5
+max_wait=60
+wait_count=0
+while [ $wait_count -lt $max_wait ]; do
+  # Kiểm tra auth-service - kiểm tra response không phải là array rỗng
+  auth_response=$(curl -s http://${CONSUL_HOST:-consul}:${CONSUL_PORT:-8500}/v1/health/service/auth-service?passing)
+  auth_registered=0
+  if [ -n "$auth_response" ] && [ "$auth_response" != "[]" ]; then
+    # Kiểm tra có ServiceID trong response
+    if echo "$auth_response" | grep -q '"ServiceID"'; then
+      auth_registered=1
+    fi
+  fi
+  
+  # Kiểm tra room-service
+  room_response=$(curl -s http://${CONSUL_HOST:-consul}:${CONSUL_PORT:-8500}/v1/health/service/room-service?passing)
+  room_registered=0
+  if [ -n "$room_response" ] && [ "$room_response" != "[]" ]; then
+    # Kiểm tra có ServiceID trong response
+    if echo "$room_response" | grep -q '"ServiceID"'; then
+      room_registered=1
+    fi
+  fi
+  
+  if [ "$auth_registered" -eq 1 ] && [ "$room_registered" -eq 1 ]; then
+    echo "✓ All services registered with Consul"
+    break
+  fi
+  
+  wait_count=$((wait_count + 1))
+  if [ $((wait_count % 5)) -eq 0 ]; then
+    echo "Waiting for services... (${wait_count}/${max_wait}) - auth: $auth_registered, room: $room_registered"
+  fi
+  sleep 2
+done
+
+if [ $wait_count -eq $max_wait ]; then
+  echo "WARNING: Services may not be fully registered. Continuing anyway..."
+  echo "You can check Consul UI at http://${CONSUL_HOST:-consul}:${CONSUL_PORT:-8500}/ui"
+fi
 
 # Generate nginx config lần đầu từ template
 echo "Generating initial nginx config..."
@@ -23,61 +61,12 @@ consul-template \
 
 # Kiểm tra config file đã được tạo
 if [ ! -f /etc/nginx/nginx.conf ]; then
-  echo "WARNING: nginx.conf not generated from template! Creating fallback config..."
-  # Tạo config fallback đơn giản
-  cat > /etc/nginx/nginx.conf <<EOF
-events {
-    worker_connections 1024;
-}
-
-http {
-    upstream frontend_service {
-        server frontend:5000;
-    }
-
-    upstream auth_service {
-        server auth-service:5001;
-    }
-
-    upstream room_service {
-        server room-service:5002;
-    }
-
-    server {
-        listen 80;
-        server_name localhost;
-
-        location / {
-            proxy_pass http://frontend_service;
-            proxy_http_version 1.1;
-            proxy_set_header Host \$host;
-            proxy_set_header X-Real-IP \$remote_addr;
-            proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        }
-
-        location /api/auth {
-            proxy_pass http://auth_service;
-            proxy_http_version 1.1;
-            proxy_set_header Host \$host;
-            proxy_set_header X-Real-IP \$remote_addr;
-            proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        }
-
-        location /api/rooms {
-            proxy_pass http://room_service;
-            proxy_http_version 1.1;
-            proxy_set_header Host \$host;
-            proxy_set_header X-Real-IP \$remote_addr;
-            proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        }
-
-        location /health {
-            return 200 "healthy\n";
-            add_header Content-Type text/plain;
-        }
-    }
-}
-EOF
+  echo "ERROR: nginx.conf not generated from Consul Template!"
+  echo "Please ensure:"
+  echo "  1. Consul is running and accessible"
+  echo "  2. Services (auth-service, room-service) are registered with Consul"
+  echo "  3. Check Consul UI at http://${CONSUL_HOST:-consul}:${CONSUL_PORT:-8500}/ui"
+  exit 1
 fi
 
 # Test nginx config
