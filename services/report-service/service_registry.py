@@ -53,4 +53,3 @@ def register_service():
         print(f"[CONSUL] ✗ Error registering service: {e}")
         import traceback
         traceback.print_exc()
-

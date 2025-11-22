@@ -22,6 +22,22 @@ http {
         {{end}}
     }
 
+    # Upstream cho tenant-service - lấy từ Consul
+    upstream tenant_service {
+        least_conn;
+        {{range service "tenant-service"}}
+        server {{.Address}}:{{.Port}};
+        {{end}}
+    }
+
+    # Upstream cho report-service - lấy từ Consul
+    upstream report_service {
+        least_conn;
+        {{range service "report-service"}}
+        server {{.Address}}:{{.Port}};
+        {{end}}
+    }
+
     # Upstream cho frontend
     upstream frontend_service {
         server frontend:5000;
@@ -67,6 +83,7 @@ http {
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
             proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_set_header Authorization $http_authorization;
             
             # CORS headers
             add_header 'Access-Control-Allow-Origin' '*' always;
@@ -101,6 +118,7 @@ http {
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
             proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_set_header Authorization $http_authorization;
             
             # CORS headers
             add_header 'Access-Control-Allow-Origin' '*' always;
@@ -119,6 +137,117 @@ http {
             add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, DELETE, OPTIONS' always;
             add_header 'Access-Control-Allow-Headers' 'Authorization, Content-Type' always;
             return 503 '{"error": "Service unavailable", "message": "room-service is not available. Please check Consul service registration."}';
+        }
+
+        # Tenant Service API
+        location /api/tenants {
+            limit_req zone=api_limit burst=20 nodelay;
+            
+            proxy_intercept_errors on;
+            error_page 502 503 504 = @tenant_error;
+            
+            proxy_pass http://tenant_service;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_set_header Authorization $http_authorization;
+            
+            add_header 'Access-Control-Allow-Origin' '*' always;
+            add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, DELETE, OPTIONS' always;
+            add_header 'Access-Control-Allow-Headers' 'Authorization, Content-Type' always;
+            
+            if ($request_method = 'OPTIONS') {
+                return 204;
+            }
+        }
+        
+        location @tenant_error {
+            default_type application/json;
+            add_header 'Access-Control-Allow-Origin' '*' always;
+            add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, DELETE, OPTIONS' always;
+            add_header 'Access-Control-Allow-Headers' 'Authorization, Content-Type' always;
+            return 503 '{"error": "Service unavailable", "message": "tenant-service is not available. Please check Consul service registration."}';
+        }
+
+        # Contract API (thuộc tenant-service)
+        location /api/contracts {
+            limit_req zone=api_limit burst=20 nodelay;
+            
+            proxy_intercept_errors on;
+            error_page 502 503 504 = @tenant_error;
+            
+            proxy_pass http://tenant_service;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_set_header Authorization $http_authorization;
+            
+            add_header 'Access-Control-Allow-Origin' '*' always;
+            add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, DELETE, OPTIONS' always;
+            add_header 'Access-Control-Allow-Headers' 'Authorization, Content-Type' always;
+            
+            if ($request_method = 'OPTIONS') {
+                return 204;
+            }
+        }
+
+        # Report Service API
+        location /api/bills {
+            limit_req zone=api_limit burst=20 nodelay;
+            
+            proxy_intercept_errors on;
+            error_page 502 503 504 = @report_error;
+            
+            proxy_pass http://report_service;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            
+            add_header 'Access-Control-Allow-Origin' '*' always;
+            add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, DELETE, OPTIONS' always;
+            add_header 'Access-Control-Allow-Headers' 'Authorization, Content-Type' always;
+            
+            if ($request_method = 'OPTIONS') {
+                return 204;
+            }
+        }
+
+        # Report API
+        location /api/reports {
+            limit_req zone=api_limit burst=20 nodelay;
+            
+            proxy_intercept_errors on;
+            error_page 502 503 504 = @report_error;
+            
+            proxy_pass http://report_service;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_set_header Authorization $http_authorization;
+            
+            add_header 'Access-Control-Allow-Origin' '*' always;
+            add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, DELETE, OPTIONS' always;
+            add_header 'Access-Control-Allow-Headers' 'Authorization, Content-Type' always;
+            
+            if ($request_method = 'OPTIONS') {
+                return 204;
+            }
+        }
+        
+        location @report_error {
+            default_type application/json;
+            add_header 'Access-Control-Allow-Origin' '*' always;
+            add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, DELETE, OPTIONS' always;
+            add_header 'Access-Control-Allow-Headers' 'Authorization, Content-Type' always;
+            return 503 '{"error": "Service unavailable", "message": "report-service is not available. Please check Consul service registration."}';
         }
 
         # Health check endpoint

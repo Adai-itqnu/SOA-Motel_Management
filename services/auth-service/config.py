@@ -8,7 +8,7 @@ SERVICE_NAME = "auth-service"
 SERVICE_PORT = int(os.getenv('SERVICE_PORT', '5001'))
 
 # JWT configuration
-JWT_SECRET = os.getenv('JWT_SECRET', 'mysecretkey')
+JWT_SECRET = os.getenv('JWT_SECRET', 'your-super-secret-key-change-this')
 
 # Consul configuration
 CONSUL_HOST = os.getenv('CONSUL_HOST', 'localhost')

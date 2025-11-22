@@ -2,7 +2,7 @@ from flask import Flask, render_template, request, jsonify
 from flask_cors import CORS
 import os
 
-app = Flask(__name__)
+app = Flask(__name__, static_folder='static', static_url_path='/static')
 CORS(app)
 
 # Lấy API Gateway URL từ environment variable
@@ -39,6 +39,7 @@ def user_home():
 def admin_dashboard():
     # Render trang trực tiếp, JavaScript sẽ kiểm tra localStorage
     return render_template('admin-dashboard.html', api_gateway=API_GATEWAY)
+
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)

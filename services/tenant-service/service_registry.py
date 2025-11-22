@@ -25,17 +25,24 @@ def register_service():
     
     try:
         # Trong Docker network, sử dụng container name (hostname) để các service khác có thể kết nối
+        # Consul sẽ tự động resolve container name thành IP trong Docker network
         container_name = os.getenv('HOSTNAME', socket.gethostname())
         
         c = consul.Consul(host=CONSUL_HOST, port=CONSUL_PORT)
         
+        # Health check URL - sử dụng container name (Docker sẽ tự resolve)
+        # Nếu cần IP, có thể dùng socket.gethostbyname(container_name) nhưng trong Docker network
+        # thì container name sẽ hoạt động tốt hơn
         try:
+            # Thử lấy IP từ container name
             container_ip = socket.gethostbyname(container_name)
+            # Nếu là 127.0.0.1, dùng container name trực tiếp
             if container_ip == "127.0.0.1":
                 service_address = container_name
             else:
                 service_address = container_ip
         except:
+            # Fallback về container name
             service_address = container_name
         
         health_url = f"http://{service_address}:{SERVICE_PORT}/health"
@@ -53,4 +60,3 @@ def register_service():
         print(f"[CONSUL] ✗ Error registering service: {e}")
         import traceback
         traceback.print_exc()
-

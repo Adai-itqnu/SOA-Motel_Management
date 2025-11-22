@@ -24,31 +24,30 @@ def register_service():
                 return
     
     try:
-        # Lấy IP của container (trong Docker) hoặc localhost (local)
-        try:
-            # Trong Docker, lấy hostname sẽ resolve về container IP
-            hostname = socket.gethostname()
-            container_ip = socket.gethostbyname(hostname)
-            # Nếu là localhost, dùng container name
-            if container_ip == "127.0.0.1":
-                container_ip = hostname
-        except:
-            # Fallback về container name nếu không resolve được
-            container_ip = os.getenv('HOSTNAME', 'localhost')
+        # Trong Docker network, sử dụng container name (hostname) để các service khác có thể kết nối
+        container_name = os.getenv('HOSTNAME', socket.gethostname())
         
         c = consul.Consul(host=CONSUL_HOST, port=CONSUL_PORT)
         
-        # Health check URL - dùng container IP hoặc service name
-        health_url = f"http://{container_ip}:{SERVICE_PORT}/health"
+        try:
+            container_ip = socket.gethostbyname(container_name)
+            if container_ip == "127.0.0.1":
+                service_address = container_name
+            else:
+                service_address = container_ip
+        except:
+            service_address = container_name
+        
+        health_url = f"http://{service_address}:{SERVICE_PORT}/health"
         
         c.agent.service.register(
             SERVICE_NAME,
-            address=container_ip,
+            address=service_address,
             port=SERVICE_PORT,
             check=consul.Check.http(health_url, interval="10s", timeout="5s")
         )
         
-        print(f"[CONSUL] ✓ Registered {SERVICE_NAME} at {container_ip}:{SERVICE_PORT}")
+        print(f"[CONSUL] ✓ Registered {SERVICE_NAME} at {service_address}:{SERVICE_PORT}")
         print(f"[CONSUL]   Health check: {health_url}")
     except Exception as e:
         print(f"[CONSUL] ✗ Error registering service: {e}")

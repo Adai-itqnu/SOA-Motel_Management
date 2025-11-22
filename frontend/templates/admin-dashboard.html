@@ -1,0 +1,629 @@
+<!DOCTYPE html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Admin Dashboard - Quản lý Nhà Trọ</title>
+    <link rel="stylesheet" href="/static/css/admin.css" />
+  </head>
+  <body>
+    <!-- Header -->
+    <header class="header">
+      <div class="header-brand">
+        <span>🏠</span>
+        <span>Admin Dashboard</span>
+      </div>
+      <div class="header-user">
+        <div class="user-info">
+          <div class="user-name" id="userName"></div>
+          <div class="user-role">Quản trị viên</div>
+        </div>
+        <button class="btn-logout" onclick="logout()">Đăng xuất</button>
+      </div>
+    </header>
+
+    <!-- Layout Container -->
+    <div class="layout-container">
+      <!-- Sidebar -->
+      <aside class="sidebar">
+        <div class="sidebar-logo">MOTEL HDK</div>
+        <nav class="sidebar-menu">
+          <div class="menu-section">
+            <div class="menu-section-title">MENU</div>
+            <a class="menu-item active" data-section="dashboard">
+              <span class="menu-item-icon">📊</span>
+              <span class="menu-item-text">Dashboard</span>
+            </a>
+            <a class="menu-item" data-section="rooms">
+              <span class="menu-item-icon">🏠</span>
+              <span class="menu-item-text">Quản lý Phòng</span>
+            </a>
+            <a class="menu-item" data-section="tenants">
+              <span class="menu-item-icon">👥</span>
+              <span class="menu-item-text">Quản lý Người Thuê</span>
+            </a>
+            <a class="menu-item" data-section="reports">
+              <span class="menu-item-icon">📈</span>
+              <span class="menu-item-text">Báo Cáo & Thống Kê</span>
+            </a>
+          </div>
+        </nav>
+      </aside>
+
+      <!-- Main Content -->
+      <main class="main-content">
+        <!-- Dashboard Panel -->
+        <div id="dashboardPanel" class="content-panel active">
+          <div class="page-title">Dashboard Tổng Quan</div>
+          <div class="page-subtitle">Quản lý và theo dõi hệ thống nhà trọ</div>
+
+          <div class="stats-grid">
+            <div class="stat-card" onclick="navigateToSection('rooms')">
+              <div class="stat-card-header">
+                <div class="stat-icon">🏠</div>
+              </div>
+              <div class="stat-label">Tổng số phòng</div>
+              <div class="stat-value" id="totalRooms">-</div>
+            </div>
+
+            <div class="stat-card" onclick="navigateToSection('rooms')">
+              <div class="stat-card-header">
+                <div class="stat-icon">✅</div>
+              </div>
+              <div class="stat-label">Phòng trống</div>
+              <div class="stat-value" id="availableRooms">-</div>
+            </div>
+
+            <div class="stat-card" onclick="navigateToSection('tenants')">
+              <div class="stat-card-header">
+                <div class="stat-icon">👥</div>
+              </div>
+              <div class="stat-label">Tổng người thuê</div>
+              <div class="stat-value" id="totalTenants">-</div>
+            </div>
+
+            <div class="stat-card" onclick="navigateToSection('tenants')">
+              <div class="stat-card-header">
+                <div class="stat-icon">📄</div>
+              </div>
+              <div class="stat-label">Hợp đồng đang hoạt động</div>
+              <div class="stat-value" id="activeContracts">-</div>
+            </div>
+
+            <div class="stat-card" onclick="navigateToSection('reports')">
+              <div class="stat-card-header">
+                <div class="stat-icon">💰</div>
+              </div>
+              <div class="stat-label">Doanh thu tháng này</div>
+              <div class="stat-value" id="monthlyRevenue">-</div>
+            </div>
+
+            <div class="stat-card" onclick="navigateToSection('reports')">
+              <div class="stat-card-header">
+                <div class="stat-icon">📊</div>
+              </div>
+              <div class="stat-label">Tỷ lệ lấp đầy</div>
+              <div class="stat-value" id="occupancyRate">-%</div>
+            </div>
+          </div>
+
+          <div class="content-section">
+            <h2 class="section-title">Thống kê nhanh</h2>
+            <div id="quickStats">
+              <div class="loading">
+                <div class="spinner"></div>
+                <p>Đang tải dữ liệu...</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Rooms Panel -->
+        <div id="roomsPanel" class="content-panel">
+          <div
+            style="
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+              margin-bottom: 30px;
+            "
+          >
+            <div>
+              <div class="page-title">Quản lý Phòng Trọ</div>
+            </div>
+            <button class="btn-primary" onclick="openCreateRoomModal()">
+              + Thêm phòng mới
+            </button>
+          </div>
+
+          <div class="stats-grid">
+            <div class="stat-card">
+              <div class="stat-value" id="roomTotalRooms">-</div>
+              <div class="stat-label">Tổng số phòng</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-value" id="roomAvailableRooms">-</div>
+              <div class="stat-label">Phòng trống</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-value" id="roomOccupiedRooms">-</div>
+              <div class="stat-label">Đã cho thuê</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-value" id="roomOccupancyRate">-%</div>
+              <div class="stat-label">Tỷ lệ lấp đầy</div>
+            </div>
+          </div>
+
+          <div class="content-section">
+            <div class="filters">
+              <div class="filter-item">
+                <input
+                  type="text"
+                  id="roomSearchInput"
+                  placeholder="Tìm kiếm phòng..."
+                />
+              </div>
+              <div class="filter-item">
+                <select id="roomStatusFilter">
+                  <option value="">Tất cả trạng thái</option>
+                  <option value="available">Còn trống</option>
+                  <option value="occupied">Đã cho thuê</option>
+                  <option value="maintenance">Bảo trì</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="table-container">
+              <table id="roomsTable">
+                <thead>
+                  <tr>
+                    <th>Mã phòng</th>
+                    <th>Tên phòng</th>
+                    <th>Loại phòng</th>
+                    <th>Giá thuê</th>
+                    <th>Trạng thái</th>
+                    <th>Hành động</th>
+                  </tr>
+                </thead>
+                <tbody id="roomsTableBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tenants Panel -->
+        <div id="tenantsPanel" class="content-panel">
+          <div
+            style="
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+              margin-bottom: 30px;
+            "
+          >
+            <div>
+              <div class="page-title">Quản lý Người Thuê & Hợp Đồng</div>
+            </div>
+            <div>
+              <button class="btn-primary" onclick="openCreateTenantModal()">
+                + Thêm người thuê
+              </button>
+              <button
+                class="btn-primary"
+                onclick="openCreateContractModal()"
+                style="margin-left: 10px"
+              >
+                + Tạo hợp đồng
+              </button>
+            </div>
+          </div>
+
+          <div class="tabs">
+            <button class="tab active" onclick="switchTenantTab('tenants')">
+              Người Thuê
+            </button>
+            <button class="tab" onclick="switchTenantTab('contracts')">
+              Hợp Đồng
+            </button>
+          </div>
+
+          <!-- Tenants Tab -->
+          <div id="tenantsTabContent" class="content-section">
+            <div class="filters">
+              <div class="filter-item">
+                <input
+                  type="text"
+                  id="tenantSearchInput"
+                  placeholder="Tìm kiếm theo tên, SĐT, CMND..."
+                />
+              </div>
+              <div class="filter-item">
+                <select id="tenantStatusFilter">
+                  <option value="">Tất cả trạng thái</option>
+                  <option value="active">Đang hoạt động</option>
+                  <option value="inactive">Ngừng hoạt động</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="table-container">
+              <table id="tenantsTable">
+                <thead>
+                  <tr>
+                    <th>Mã</th>
+                    <th>Họ tên</th>
+                    <th>Số điện thoại</th>
+                    <th>CMND/CCCD</th>
+                    <th>Trạng thái</th>
+                    <th>Hành động</th>
+                  </tr>
+                </thead>
+                <tbody id="tenantsTableBody"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Contracts Tab -->
+          <div
+            id="contractsTabContent"
+            class="content-section"
+            style="display: none"
+          >
+            <div class="filters">
+              <div class="filter-item">
+                <input
+                  type="text"
+                  id="contractSearchInput"
+                  placeholder="Tìm kiếm hợp đồng..."
+                />
+              </div>
+              <div class="filter-item">
+                <select id="contractStatusFilter">
+                  <option value="">Tất cả trạng thái</option>
+                  <option value="active">Đang hoạt động</option>
+                  <option value="expired">Hết hạn</option>
+                  <option value="terminated">Đã chấm dứt</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="table-container">
+              <table id="contractsTable">
+                <thead>
+                  <tr>
+                    <th>Mã hợp đồng</th>
+                    <th>Người thuê</th>
+                    <th>Phòng</th>
+                    <th>Ngày bắt đầu</th>
+                    <th>Ngày kết thúc</th>
+                    <th>Giá thuê</th>
+                    <th>Trạng thái</th>
+                    <th>Hành động</th>
+                  </tr>
+                </thead>
+                <tbody id="contractsTableBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- Reports Panel -->
+        <div id="reportsPanel" class="content-panel">
+          <div class="page-title">Báo Cáo & Thống Kê</div>
+
+          <div class="tabs">
+            <button class="tab active" onclick="switchReportTab('overview')">
+              Tổng Quan
+            </button>
+            <button class="tab" onclick="switchReportTab('revenue')">
+              Doanh Thu
+            </button>
+            <button class="tab" onclick="switchReportTab('rooms')">
+              Thống Kê Phòng
+            </button>
+            <button class="tab" onclick="switchReportTab('debt')">
+              Công Nợ
+            </button>
+          </div>
+
+          <!-- Overview Tab -->
+          <div id="overviewTabContent" class="content-section">
+            <div class="stats-grid">
+              <div class="stat-card">
+                <div class="stat-value" id="overviewTotalRooms">-</div>
+                <div class="stat-label">Tổng số phòng</div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-value" id="overviewOccupiedRooms">-</div>
+                <div class="stat-label">Phòng đã cho thuê</div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-value" id="overviewActiveContracts">-</div>
+                <div class="stat-label">Hợp đồng đang hoạt động</div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-value" id="overviewTotalRevenue">-</div>
+                <div class="stat-label">Tổng doanh thu</div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-value" id="overviewTotalDebt">-</div>
+                <div class="stat-label">Tổng công nợ</div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-value" id="overviewCollectionRate">-%</div>
+                <div class="stat-label">Tỷ lệ thu hồi</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Revenue Tab -->
+          <div
+            id="revenueTabContent"
+            class="content-section"
+            style="display: none"
+          >
+            <h2>Báo Cáo Doanh Thu</h2>
+            <div class="filters">
+              <div class="filter-item">
+                <select id="revenueYear">
+                  <option value="">Chọn năm</option>
+                </select>
+              </div>
+              <button class="btn-primary" onclick="loadRevenueReport()">
+                Xem báo cáo
+              </button>
+            </div>
+            <div id="revenueContent">
+              <div class="loading">
+                <div class="spinner"></div>
+                <p>Đang tải dữ liệu...</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Rooms Statistics Tab -->
+          <div
+            id="roomsTabContent"
+            class="content-section"
+            style="display: none"
+          >
+            <h2>Thống Kê Phòng - Mức Độ Quan Tâm</h2>
+            <div id="roomPopularityContent">
+              <div class="loading">
+                <div class="spinner"></div>
+                <p>Đang tải dữ liệu...</p>
+              </div>
+            </div>
+          </div>
+
+          <div
+            id="popularRoomsSection"
+            class="content-section"
+            style="display: none"
+          >
+            <h2>Phòng Được Đặt Nhiều Nhất</h2>
+            <div class="table-container">
+              <table id="popularRoomsTable">
+                <thead>
+                  <tr>
+                    <th>Xếp hạng</th>
+                    <th>Mã phòng</th>
+                    <th>Tên phòng</th>
+                    <th>Số lần thuê</th>
+                    <th>Doanh thu</th>
+                    <th>Tỷ lệ lấp đầy</th>
+                  </tr>
+                </thead>
+                <tbody id="popularRoomsTableBody"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Debt Tab -->
+          <div
+            id="debtTabContent"
+            class="content-section"
+            style="display: none"
+          >
+            <h2>Báo Cáo Công Nợ</h2>
+            <div id="debtContent">
+              <div class="loading">
+                <div class="spinner"></div>
+                <p>Đang tải dữ liệu...</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+
+    <!-- Room Modal -->
+    <div id="roomModal" class="modal">
+      <div class="modal-content">
+        <h2 class="modal-title" id="roomModalTitle">Thêm phòng mới</h2>
+        <div id="roomModalAlert" class="alert"></div>
+        <form id="roomForm">
+          <input type="hidden" id="roomId" />
+          <div class="form-group">
+            <label>Tên phòng *</label>
+            <input type="text" id="roomName" required />
+          </div>
+          <div class="form-group">
+            <label>Loại phòng *</label>
+            <select id="roomType" required>
+              <option value="">Chọn loại phòng</option>
+              <option value="Phòng đơn">Phòng đơn</option>
+              <option value="Phòng đôi">Phòng đôi</option>
+              <option value="Phòng VIP">Phòng VIP</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Giá thuê (VNĐ) *</label>
+            <input type="number" id="roomPrice" required />
+          </div>
+          <div class="form-group">
+            <label>Trạng thái</label>
+            <select id="roomStatus">
+              <option value="available">Còn trống</option>
+              <option value="occupied">Đã cho thuê</option>
+              <option value="maintenance">Bảo trì</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Mô tả</label>
+            <textarea id="roomDescription" rows="3"></textarea>
+          </div>
+          <div class="form-actions">
+            <button
+              type="button"
+              class="btn-secondary"
+              onclick="closeRoomModal()"
+            >
+              Hủy
+            </button>
+            <button type="submit" class="btn-primary">Lưu</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Tenant Modal -->
+    <div id="tenantModal" class="modal">
+      <div class="modal-content">
+        <h2 class="modal-title" id="tenantModalTitle">Thêm người thuê mới</h2>
+        <div id="tenantModalAlert" class="alert"></div>
+        <form id="tenantForm">
+          <input type="hidden" id="tenantId" />
+          <div class="form-row">
+            <div class="form-group">
+              <label>Họ tên *</label>
+              <input type="text" id="tenantName" required />
+            </div>
+            <div class="form-group">
+              <label>Số điện thoại *</label>
+              <input type="text" id="tenantPhone" required />
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>CMND/CCCD *</label>
+              <input type="text" id="tenantIdCard" required />
+            </div>
+            <div class="form-group">
+              <label>Ngày sinh</label>
+              <input type="date" id="tenantDob" />
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Địa chỉ *</label>
+            <input type="text" id="tenantAddress" required />
+          </div>
+          <div class="form-group">
+            <label>Email</label>
+            <input type="email" id="tenantEmail" />
+          </div>
+          <div class="form-group">
+            <label>Trạng thái</label>
+            <select id="tenantStatus">
+              <option value="active">Đang hoạt động</option>
+              <option value="inactive">Ngừng hoạt động</option>
+            </select>
+          </div>
+          <div class="form-actions">
+            <button
+              type="button"
+              class="btn-secondary"
+              onclick="closeTenantModal()"
+            >
+              Hủy
+            </button>
+            <button type="submit" class="btn-primary">Lưu</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Contract Modal -->
+    <div id="contractModal" class="modal">
+      <div class="modal-content">
+        <h2 class="modal-title" id="contractModalTitle">Tạo hợp đồng mới</h2>
+        <div id="contractModalAlert" class="alert"></div>
+        <form id="contractForm">
+          <input type="hidden" id="contractId" />
+          <div class="form-row">
+            <div class="form-group">
+              <label>Người thuê *</label>
+              <select id="contractTenantId" required></select>
+            </div>
+            <div class="form-group">
+              <label>Phòng *</label>
+              <select id="contractRoomId" required></select>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Ngày bắt đầu *</label>
+              <input type="date" id="contractStartDate" required />
+            </div>
+            <div class="form-group">
+              <label>Ngày kết thúc *</label>
+              <input type="date" id="contractEndDate" required />
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Giá thuê/tháng (VNĐ) *</label>
+              <input type="number" id="contractMonthlyRent" required />
+            </div>
+            <div class="form-group">
+              <label>Tiền cọc (VNĐ) *</label>
+              <input type="number" id="contractDeposit" required />
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Giá điện (VNĐ/kWh)</label>
+              <input type="number" id="contractElectricPrice" value="3500" />
+            </div>
+            <div class="form-group">
+              <label>Giá nước (VNĐ/m³)</label>
+              <input type="number" id="contractWaterPrice" value="20000" />
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Ngày thanh toán hàng tháng</label>
+            <input
+              type="number"
+              id="contractPaymentDay"
+              min="1"
+              max="31"
+              value="5"
+            />
+          </div>
+          <div class="form-group">
+            <label>Ghi chú</label>
+            <textarea id="contractNotes" rows="3"></textarea>
+          </div>
+          <div class="form-actions">
+            <button
+              type="button"
+              class="btn-secondary"
+              onclick="closeContractModal()"
+            >
+              Hủy
+            </button>
+            <button type="submit" class="btn-primary">Lưu</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="/static/js/admin.js"></script>
+    <script src="/static/js/dashboard.js"></script>
+    <script src="/static/js/rooms.js"></script>
+    <script src="/static/js/tenants.js"></script>
+    <script src="/static/js/reports.js"></script>
+  </body>
+</html>
