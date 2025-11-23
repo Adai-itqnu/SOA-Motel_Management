@@ -15,11 +15,20 @@ COPY templates/nginx.conf.tmpl /etc/nginx/templates/nginx.conf.tmpl
 
 # Copy entrypoint script
 COPY entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+# Fix line endings (Windows CRLF to Unix LF) and set executable permission
+RUN apk add --no-cache dos2unix && \
+    dos2unix /entrypoint.sh 2>/dev/null || sed -i 's/\r$//' /entrypoint.sh && \
+    chmod +x /entrypoint.sh && \
+    apk del dos2unix && \
+    rm -rf /var/cache/apk/* && \
+    # Verify file exists and is executable
+    ls -la /entrypoint.sh && \
+    head -1 /entrypoint.sh
 
 # Expose port
 EXPOSE 80
 
 # Start consul-template và nginx
-ENTRYPOINT ["/entrypoint.sh"]
+# Use sh to execute script to avoid shebang issues
+ENTRYPOINT ["/bin/sh", "/entrypoint.sh"]
 

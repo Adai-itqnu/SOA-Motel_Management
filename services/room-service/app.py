@@ -19,13 +19,16 @@ app.config['SERVICE_PORT'] = SERVICE_PORT
 def token_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
-        token = request.headers.get('Authorization')
+        # Try both 'Authorization' and 'authorization' (nginx may lowercase headers)
+        token = request.headers.get('Authorization') or request.headers.get('authorization')
         
         if not token:
             return jsonify({'message': 'Token không tồn tại!'}), 401
         
         try:
             if token.startswith('Bearer '):
+                token = token[7:]
+            elif token.startswith('bearer '):
                 token = token[7:]
             
             data = jwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'])

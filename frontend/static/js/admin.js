@@ -69,6 +69,10 @@ function formatDate(dateString) {
   return date.toLocaleDateString("vi-VN");
 }
 
+// Expose utility functions to window
+window.formatPrice = formatPrice;
+window.formatDate = formatDate;
+
 // Navigation
 window.navigateToSection = function navigateToSection(section) {
   console.log("navigateToSection called with section:", section);

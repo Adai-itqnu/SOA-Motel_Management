@@ -4,8 +4,28 @@ let allRooms = [];
 let currentEditTenantId = null;
 let currentEditContractId = null;
 
-// Switch tenant tab
-window.switchTenantTab = function switchTenantTab(tab) {
+// Helper functions - use window versions if available
+function formatPrice(price) {
+  if (typeof window.formatPrice === 'function') {
+    return window.formatPrice(price);
+  }
+  return new Intl.NumberFormat("vi-VN", {
+    style: "currency",
+    currency: "VND",
+  }).format(price);
+}
+
+function formatDate(dateString) {
+  if (typeof window.formatDate === 'function') {
+    return window.formatDate(dateString);
+  }
+  if (!dateString) return "-";
+  const date = new Date(dateString);
+  return date.toLocaleDateString("vi-VN");
+}
+
+// Switch tenant tab - expose immediately to window
+function switchTenantTab(tab) {
   document
     .querySelectorAll("#tenantsPanel .tab")
     .forEach((t) => t.classList.remove("active"));
@@ -16,17 +36,22 @@ window.switchTenantTab = function switchTenantTab(tab) {
     document.querySelectorAll("#tenantsPanel .tab")[0].classList.add("active");
     if (tenantsTabContent) tenantsTabContent.style.display = "block";
     if (contractsTabContent) contractsTabContent.style.display = "none";
-    loadTenantsData();
+    if (typeof loadTenantsData === 'function') {
+      loadTenantsData();
+    }
   } else {
     document.querySelectorAll("#tenantsPanel .tab")[1].classList.add("active");
     if (tenantsTabContent) tenantsTabContent.style.display = "none";
     if (contractsTabContent) contractsTabContent.style.display = "block";
-    loadContractsData();
+    if (typeof loadContractsData === 'function') {
+      loadContractsData();
+    }
   }
-};
+}
+window.switchTenantTab = switchTenantTab;
 
 // Load tenants data
-window.loadTenantsData = async function loadTenantsData() {
+async function loadTenantsData() {
   console.log("loadTenantsData called from tenants.js");
   try {
     const headers = getAuthHeader();
@@ -49,10 +74,11 @@ window.loadTenantsData = async function loadTenantsData() {
   } catch (error) {
     console.error("Error loading tenants:", error);
   }
-};
+}
+window.loadTenantsData = loadTenantsData;
 
 // Load contracts data
-window.loadContractsData = async function loadContractsData() {
+async function loadContractsData() {
   console.log("loadContractsData called from tenants.js");
   try {
     const headers = getAuthHeader();
@@ -75,7 +101,8 @@ window.loadContractsData = async function loadContractsData() {
   } catch (error) {
     console.error("Error loading contracts:", error);
   }
-};
+}
+window.loadContractsData = loadContractsData;
 
 // Load rooms for contract form
 async function loadRoomsForContract() {
@@ -229,7 +256,7 @@ function renderContracts(contracts) {
 }
 
 // Open create tenant modal
-window.openCreateTenantModal = function openCreateTenantModal() {
+function openCreateTenantModal() {
   currentEditTenantId = null;
   const modalTitle = document.getElementById("tenantModalTitle");
   const tenantForm = document.getElementById("tenantForm");
@@ -243,10 +270,11 @@ window.openCreateTenantModal = function openCreateTenantModal() {
 
   const modal = document.getElementById("tenantModal");
   if (modal) modal.style.display = "block";
-};
+}
+window.openCreateTenantModal = openCreateTenantModal;
 
 // Open edit tenant modal
-window.openEditTenantModal = function openEditTenantModal(tenantId) {
+function openEditTenantModal(tenantId) {
   const tenant = allTenants.find((t) => t._id === tenantId);
   if (!tenant) return;
 
@@ -275,16 +303,18 @@ window.openEditTenantModal = function openEditTenantModal(tenantId) {
 
   const modal = document.getElementById("tenantModal");
   if (modal) modal.style.display = "block";
-};
+}
+window.openEditTenantModal = openEditTenantModal;
 
 // Close tenant modal
-window.closeTenantModal = function closeTenantModal() {
+function closeTenantModal() {
   const modal = document.getElementById("tenantModal");
   if (modal) modal.style.display = "none";
-};
+}
+window.closeTenantModal = closeTenantModal;
 
 // Delete tenant
-window.deleteTenant = async function deleteTenant(tenantId) {
+async function deleteTenant(tenantId) {
   if (!confirm("Bạn có chắc muốn xóa người thuê này?")) return;
   try {
     const response = await fetch(`/api/tenants/${tenantId}`, {
@@ -298,10 +328,11 @@ window.deleteTenant = async function deleteTenant(tenantId) {
   } catch (error) {
     alert(error.message);
   }
-};
+}
+window.deleteTenant = deleteTenant;
 
 // View tenant
-window.viewTenant = async function viewTenant(tenantId) {
+async function viewTenant(tenantId) {
   try {
     const response = await fetch(`/api/tenants/${tenantId}`, {
       headers: getAuthHeader(),
@@ -318,10 +349,11 @@ window.viewTenant = async function viewTenant(tenantId) {
   } catch (error) {
     alert(error.message);
   }
-};
+}
+window.viewTenant = viewTenant;
 
 // Open create contract modal
-window.openCreateContractModal = async function openCreateContractModal() {
+async function openCreateContractModal() {
   await loadRoomsForContract();
   await loadTenantsData();
 
@@ -347,16 +379,18 @@ window.openCreateContractModal = async function openCreateContractModal() {
 
   const modal = document.getElementById("contractModal");
   if (modal) modal.style.display = "block";
-};
+}
+window.openCreateContractModal = openCreateContractModal;
 
 // Close contract modal
-window.closeContractModal = function closeContractModal() {
+function closeContractModal() {
   const modal = document.getElementById("contractModal");
   if (modal) modal.style.display = "none";
-};
+}
+window.closeContractModal = closeContractModal;
 
 // View contract
-window.viewContract = async function viewContract(contractId) {
+async function viewContract(contractId) {
   try {
     const response = await fetch(`/api/contracts/${contractId}`, {
       headers: getAuthHeader(),
@@ -375,10 +409,11 @@ window.viewContract = async function viewContract(contractId) {
   } catch (error) {
     alert(error.message);
   }
-};
+}
+window.viewContract = viewContract;
 
 // Terminate contract
-window.terminateContract = async function terminateContract(contractId) {
+async function terminateContract(contractId) {
   if (!confirm("Bạn có chắc muốn chấm dứt hợp đồng này?")) return;
   try {
     const response = await fetch(`/api/contracts/${contractId}/terminate`, {
@@ -396,10 +431,11 @@ window.terminateContract = async function terminateContract(contractId) {
   } catch (error) {
     alert(error.message);
   }
-};
+}
+window.terminateContract = terminateContract;
 
 // Initialize tenant form handlers
-window.initializeTenantsHandlers = function initializeTenantsHandlers() {
+function initializeTenantsHandlers() {
   console.log("initializeTenantsHandlers called from tenants.js");
   const tenantForm = document.getElementById("tenantForm");
   if (tenantForm && !tenantForm.dataset.initialized) {
@@ -591,7 +627,8 @@ window.initializeTenantsHandlers = function initializeTenantsHandlers() {
     };
     window.addEventListener("click", window.tenantsModalClickHandler);
   }
-};
+}
+window.initializeTenantsHandlers = initializeTenantsHandlers;
 
 // Initialize on DOM ready
 document.addEventListener("DOMContentLoaded", function () {
@@ -600,5 +637,3 @@ document.addEventListener("DOMContentLoaded", function () {
     initializeTenantsHandlers();
   }
 });
-
-// Function already exposed above as window.initializeTenantsHandlers
