@@ -6,7 +6,8 @@ app = Flask(__name__, static_folder='static', static_url_path='/static')
 CORS(app)
 
 # Lấy API Gateway URL từ environment variable
-API_GATEWAY = os.getenv('API_GATEWAY', 'http://localhost')
+# Sử dụng empty string để dùng relative URLs (hoạt động với mọi host)
+API_GATEWAY = os.getenv('API_GATEWAY', '')
 
 # Health check endpoint
 @app.route('/health', methods=['GET'])
