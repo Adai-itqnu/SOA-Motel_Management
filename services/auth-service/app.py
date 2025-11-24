@@ -67,11 +67,15 @@ def admin_required(f):
 def register():
     data = request.get_json()
     
-    # Validation
-    required_fields = ['username', 'password', 'email', 'name', 'phone']
+    # Validation - các trường bắt buộc
+    # Phone is now optional
+    required_fields = ['username', 'password', 'email', 'name']
     for field in required_fields:
         if field not in data:
             return jsonify({'message': f'Thiếu trường {field}!'}), 400
+    
+    # Các trường tenant (tùy chọn khi đăng ký, có thể cập nhật sau)
+    # id_card, address, date_of_birth, phone có thể để trống khi đăng ký
     
     # Kiểm tra username đã tồn tại
     if users_collection.find_one({'username': data['username']}):
@@ -85,16 +89,37 @@ def register():
     user_count = users_collection.count_documents({})
     role = 'admin' if user_count == 0 else 'user'
     
-    # Tạo user mới
+    # Tạo user_id (tìm ID lớn nhất để tránh trùng)
+    existing_users = list(users_collection.find({}, {'_id': 1}).sort('_id', -1).limit(1))
+    if existing_users and existing_users[0].get('_id'):
+        last_id = existing_users[0]['_id']
+        if last_id.startswith('U'):
+            try:
+                last_num = int(last_id[1:])
+                user_id = f"U{last_num + 1:03d}"
+            except:
+                user_id = f"U{user_count + 1:03d}"
+        else:
+            user_id = f"U{user_count + 1:03d}"
+    else:
+        user_id = f"U{user_count + 1:03d}"
+    
+    # Tạo user mới với thông tin tenant
     new_user = {
-        '_id': f"U{user_count + 1:03d}",
+        '_id': user_id,
         'username': data['username'],
         'password_hash': generate_password_hash(data['password']),
         'role': role,
         'name': data['name'],
         'email': data['email'],
-        'phone': data['phone'],
+        'phone': data.get('phone', ''),
+        # Thông tin tenant (có thể để trống khi đăng ký)
+        'id_card': data.get('id_card', ''),
+        'address': data.get('address', ''),
+        'date_of_birth': data.get('date_of_birth', ''),
+        'status': 'active',  # active | inactive
         'created_at': datetime.datetime.utcnow().isoformat(),
+        'updated_at': datetime.datetime.utcnow().isoformat(),
         'last_login': None
     }
     
@@ -174,11 +199,60 @@ def get_current_user(current_user):
         'username': current_user['username'],
         'name': current_user['name'],
         'email': current_user['email'],
-        'phone': current_user['phone'],
+        'phone': current_user.get('phone', ''),
+        'id_card': current_user.get('id_card', ''),
+        'address': current_user.get('address', ''),
+        'date_of_birth': current_user.get('date_of_birth', ''),
         'role': current_user['role'],
         'created_at': current_user['created_at'],
         'last_login': current_user['last_login']
     }), 200
+
+# API Update profile
+@app.route('/api/auth/profile', methods=['PUT'])
+@token_required
+def update_profile(current_user):
+    data = request.get_json()
+    
+    update_data = {}
+    
+    # Allow updating specific fields
+    allowed_fields = ['name', 'email', 'phone', 'id_card', 'address', 'date_of_birth']
+    
+    for field in allowed_fields:
+        if field in data:
+            update_data[field] = data[field]
+            
+    if not update_data:
+        return jsonify({'message': 'Không có dữ liệu cập nhật!'}), 400
+        
+    update_data['updated_at'] = datetime.datetime.utcnow().isoformat()
+    
+    try:
+        users_collection.update_one(
+            {'_id': current_user['_id']},
+            {'$set': update_data}
+        )
+        
+        # Return updated user info
+        updated_user = users_collection.find_one({'_id': current_user['_id']})
+        
+        return jsonify({
+            'message': 'Cập nhật thông tin thành công!',
+            'user': {
+                'id': updated_user['_id'],
+                'username': updated_user['username'],
+                'name': updated_user['name'],
+                'email': updated_user['email'],
+                'phone': updated_user.get('phone', ''),
+                'id_card': updated_user.get('id_card', ''),
+                'address': updated_user.get('address', ''),
+                'date_of_birth': updated_user.get('date_of_birth', ''),
+                'role': updated_user['role']
+            }
+        }), 200
+    except Exception as e:
+        return jsonify({'message': f'Lỗi cập nhật: {str(e)}'}), 500
 
 # API Đổi mật khẩu
 @app.route('/api/auth/change-password', methods=['PUT'])
@@ -198,6 +272,9 @@ def change_password(current_user):
     )
     
     return jsonify({'message': 'Đổi mật khẩu thành công!'}), 200
+
+# API register-tenant đã được tích hợp vào tenant-service
+# Tất cả users (kể cả tenant) đều được lưu trong users collection
 
 # API Lấy danh sách users (chỉ admin)
 @app.route('/api/auth/users', methods=['GET'])

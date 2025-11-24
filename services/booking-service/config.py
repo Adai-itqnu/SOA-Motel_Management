@@ -4,8 +4,8 @@ import os
 MONGO_URI = os.getenv('MONGO_URI', 'mongodb://localhost:27017/users_db')
 
 # Service configuration
-SERVICE_NAME = "tenant-service"
-SERVICE_PORT = int(os.getenv('SERVICE_PORT', '5003'))
+SERVICE_NAME = "booking-service"
+SERVICE_PORT = int(os.getenv('SERVICE_PORT', '5005'))
 
 # JWT configuration
 JWT_SECRET = os.getenv('JWT_SECRET', 'your-super-secret-key-change-this')
@@ -14,6 +14,7 @@ JWT_SECRET = os.getenv('JWT_SECRET', 'your-super-secret-key-change-this')
 CONSUL_HOST = os.getenv('CONSUL_HOST', 'localhost')
 CONSUL_PORT = int(os.getenv('CONSUL_PORT', '8500'))
 
-# Database configuration - Dùng chung users_db
+# Database configuration
 DB_NAME = 'users_db'
-TENANTS_COLLECTION = 'users'  # Dùng chung collection users
+BOOKINGS_COLLECTION = 'bookings'
+

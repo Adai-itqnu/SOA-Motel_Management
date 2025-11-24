@@ -140,6 +140,10 @@ window.openEditRoomModal = function openEditRoomModal(roomId) {
   const roomName = document.getElementById("roomName");
   const roomType = document.getElementById("roomType");
   const roomPrice = document.getElementById("roomPrice");
+  const roomDeposit = document.getElementById("roomDeposit");
+  const roomPaymentDay = document.getElementById("roomPaymentDay");
+  const roomElectricPrice = document.getElementById("roomElectricPrice");
+  const roomWaterPrice = document.getElementById("roomWaterPrice");
   const roomStatus = document.getElementById("roomStatus");
   const roomDescription = document.getElementById("roomDescription");
   const modalAlert = document.getElementById("roomModalAlert");
@@ -149,6 +153,10 @@ window.openEditRoomModal = function openEditRoomModal(roomId) {
   if (roomName) roomName.value = room.name;
   if (roomType) roomType.value = room.room_type;
   if (roomPrice) roomPrice.value = room.price;
+  if (roomDeposit) roomDeposit.value = room.deposit || 0;
+  if (roomPaymentDay) roomPaymentDay.value = room.payment_day || 5;
+  if (roomElectricPrice) roomElectricPrice.value = room.electric_price || 3500;
+  if (roomWaterPrice) roomWaterPrice.value = room.water_price || 20000;
   if (roomStatus) roomStatus.value = room.status;
   if (roomDescription) roomDescription.value = room.description || "";
   if (modalAlert) modalAlert.style.display = "none";
@@ -190,15 +198,25 @@ document.addEventListener("DOMContentLoaded", function () {
       const roomName = document.getElementById("roomName");
       const roomType = document.getElementById("roomType");
       const roomPrice = document.getElementById("roomPrice");
+      const roomDeposit = document.getElementById("roomDeposit");
+      const roomPaymentDay = document.getElementById("roomPaymentDay");
+      const roomElectricPrice = document.getElementById("roomElectricPrice");
+      const roomWaterPrice = document.getElementById("roomWaterPrice");
       const roomStatus = document.getElementById("roomStatus");
       const roomDescription = document.getElementById("roomDescription");
 
-      if (!roomName || !roomType || !roomPrice) return;
+      if (!roomName || !roomType || !roomPrice || !roomDeposit) return;
 
       const formData = {
         name: roomName.value,
         room_type: roomType.value,
         price: parseFloat(roomPrice.value),
+        deposit: parseFloat(roomDeposit.value),
+        payment_day: roomPaymentDay ? parseInt(roomPaymentDay.value) : 5,
+        electric_price: roomElectricPrice
+          ? parseFloat(roomElectricPrice.value)
+          : 3500,
+        water_price: roomWaterPrice ? parseFloat(roomWaterPrice.value) : 20000,
         status: roomStatus ? roomStatus.value : "available",
         description: roomDescription ? roomDescription.value : "",
       };
@@ -256,3 +274,10 @@ document.addEventListener("DOMContentLoaded", function () {
     }
   };
 });
+
+// Notify that rooms.js is ready
+if (typeof window.scriptsLoaded === "undefined") {
+  window.scriptsLoaded = {};
+}
+window.scriptsLoaded.rooms = true;
+console.log("rooms.js loaded");

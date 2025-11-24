@@ -44,6 +44,13 @@ window.loadReportsData = async function loadReportsData() {
   loadOverview();
 };
 
+// Chart instances for cleanup
+let roomOccupancyChart = null;
+let debtCollectionChart = null;
+let revenueChart = null;
+let roomPopularityChart = null;
+let debtChart = null;
+
 // Load overview
 async function loadOverview() {
   try {
@@ -68,23 +75,103 @@ async function loadOverview() {
       "overviewCollectionRate"
     );
 
-    if (overviewTotalRooms)
-      overviewTotalRooms.textContent = data.rooms?.total || 0;
+    const totalRooms = data.rooms?.total || 0;
+    const occupiedRooms = data.rooms?.occupied || 0;
+    const availableRooms = totalRooms - occupiedRooms;
+    const totalRevenue = data.finance?.total_revenue || 0;
+    const totalDebt = data.finance?.total_debt || 0;
+    const collectionRate = data.finance?.collection_rate || 0;
+
+    if (overviewTotalRooms) overviewTotalRooms.textContent = totalRooms;
     if (overviewOccupiedRooms)
-      overviewOccupiedRooms.textContent = data.rooms?.occupied || 0;
+      overviewOccupiedRooms.textContent = occupiedRooms;
     if (overviewActiveContracts)
       overviewActiveContracts.textContent = data.contracts?.active || 0;
     if (overviewTotalRevenue)
-      overviewTotalRevenue.textContent = formatPrice(
-        data.finance?.total_revenue || 0
-      );
+      overviewTotalRevenue.textContent = formatPrice(totalRevenue);
     if (overviewTotalDebt)
-      overviewTotalDebt.textContent = formatPrice(
-        data.finance?.total_debt || 0
-      );
+      overviewTotalDebt.textContent = formatPrice(totalDebt);
     if (overviewCollectionRate)
-      overviewCollectionRate.textContent =
-        (data.finance?.collection_rate || 0) + "%";
+      overviewCollectionRate.textContent = collectionRate + "%";
+
+    // Draw room occupancy pie chart
+    const roomCtx = document.getElementById("roomOccupancyChart");
+    if (roomCtx) {
+      if (roomOccupancyChart) roomOccupancyChart.destroy();
+      roomOccupancyChart = new Chart(roomCtx, {
+        type: "pie",
+        data: {
+          labels: ["Đã cho thuê", "Còn trống"],
+          datasets: [
+            {
+              data: [occupiedRooms, availableRooms],
+              backgroundColor: ["#4caf50", "#ff9800"],
+              borderWidth: 2,
+              borderColor: "#fff",
+            },
+          ],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: true,
+          plugins: {
+            legend: {
+              position: "bottom",
+            },
+            tooltip: {
+              callbacks: {
+                label: function (context) {
+                  const label = context.label || "";
+                  const value = context.parsed || 0;
+                  const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                  const percentage = ((value / total) * 100).toFixed(1);
+                  return `${label}: ${value} phòng (${percentage}%)`;
+                },
+              },
+            },
+          },
+        },
+      });
+    }
+
+    // Draw debt collection chart
+    const debtCtx = document.getElementById("debtCollectionChart");
+    if (debtCtx && totalRevenue > 0) {
+      if (debtCollectionChart) debtCollectionChart.destroy();
+      const collected = totalRevenue - totalDebt;
+      debtCollectionChart = new Chart(debtCtx, {
+        type: "doughnut",
+        data: {
+          labels: ["Đã thu", "Còn nợ"],
+          datasets: [
+            {
+              data: [collected, totalDebt],
+              backgroundColor: ["#2196f3", "#f44336"],
+              borderWidth: 2,
+              borderColor: "#fff",
+            },
+          ],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: true,
+          plugins: {
+            legend: {
+              position: "bottom",
+            },
+            tooltip: {
+              callbacks: {
+                label: function (context) {
+                  const label = context.label || "";
+                  const value = context.parsed || 0;
+                  return `${label}: ${formatPrice(value)}`;
+                },
+              },
+            },
+          },
+        },
+      });
+    }
   } catch (error) {
     console.error("Error loading overview:", error);
   }
@@ -97,11 +184,13 @@ window.loadRevenueReport = async function loadRevenueReport() {
     ? revenueYear.value || new Date().getFullYear()
     : new Date().getFullYear();
   const content = document.getElementById("revenueContent");
+  const chartContainer = document.getElementById("revenueChartContainer");
 
   if (!content) return;
 
   content.innerHTML =
     '<div class="loading"><div class="spinner"></div><p>Đang tải dữ liệu...</p></div>';
+  if (chartContainer) chartContainer.style.display = "none";
 
   try {
     const response = await fetch(`/api/reports/revenue?year=${year}`, {
@@ -110,9 +199,7 @@ window.loadRevenueReport = async function loadRevenueReport() {
     if (!response.ok) throw new Error("Không thể tải báo cáo doanh thu");
     const data = await response.json();
 
-    const maxRevenue = Math.max(...data.monthly_data.map((m) => m.revenue), 1);
-    const chartHeight = 250;
-
+    // Update content with summary and table
     content.innerHTML = `
       <div style="margin-bottom: 20px;">
         <h3>Doanh thu năm ${data.year}</h3>
@@ -120,24 +207,7 @@ window.loadRevenueReport = async function loadRevenueReport() {
           data.total_revenue
         )}</strong></p>
       </div>
-      <div class="chart-container">
-        <div class="bar-chart">
-          ${data.monthly_data
-            .map((month) => {
-              const height = (month.revenue / maxRevenue) * chartHeight;
-              return `
-                <div class="bar-item">
-                  <div class="bar" style="height: ${height}px;">
-                    <div class="bar-value">${formatPrice(month.revenue)}</div>
-                  </div>
-                  <div class="bar-label">Tháng ${month.month}</div>
-                </div>
-              `;
-            })
-            .join("")}
-        </div>
-      </div>
-      <table style="margin-top: 30px;">
+      <table style="margin-top: 20px;">
         <thead>
           <tr>
             <th>Tháng</th>
@@ -160,8 +230,97 @@ window.loadRevenueReport = async function loadRevenueReport() {
         </tbody>
       </table>
     `;
+
+    // Draw Chart.js line chart
+    const chartCtx = document.getElementById("revenueChart");
+    if (chartCtx && chartContainer) {
+      if (revenueChart) revenueChart.destroy();
+      chartContainer.style.display = "block";
+
+      const months = data.monthly_data.map((m) => `Tháng ${m.month}`);
+      const revenues = data.monthly_data.map((m) => m.revenue);
+      const billsCount = data.monthly_data.map((m) => m.bills_count);
+
+      revenueChart = new Chart(chartCtx, {
+        type: "line",
+        data: {
+          labels: months,
+          datasets: [
+            {
+              label: "Doanh thu (VNĐ)",
+              data: revenues,
+              borderColor: "#2196f3",
+              backgroundColor: "rgba(33, 150, 243, 0.1)",
+              tension: 0.4,
+              yAxisID: "y",
+            },
+            {
+              label: "Số hóa đơn",
+              data: billsCount,
+              borderColor: "#4caf50",
+              backgroundColor: "rgba(76, 175, 80, 0.1)",
+              tension: 0.4,
+              yAxisID: "y1",
+            },
+          ],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: true,
+          interaction: {
+            mode: "index",
+            intersect: false,
+          },
+          plugins: {
+            legend: {
+              position: "top",
+            },
+            tooltip: {
+              callbacks: {
+                label: function (context) {
+                  if (context.datasetIndex === 0) {
+                    return `Doanh thu: ${formatPrice(context.parsed.y)}`;
+                  } else {
+                    return `Số hóa đơn: ${context.parsed.y}`;
+                  }
+                },
+              },
+            },
+          },
+          scales: {
+            y: {
+              type: "linear",
+              display: true,
+              position: "left",
+              title: {
+                display: true,
+                text: "Doanh thu (VNĐ)",
+              },
+              ticks: {
+                callback: function (value) {
+                  return formatPrice(value);
+                },
+              },
+            },
+            y1: {
+              type: "linear",
+              display: true,
+              position: "right",
+              title: {
+                display: true,
+                text: "Số hóa đơn",
+              },
+              grid: {
+                drawOnChartArea: false,
+              },
+            },
+          },
+        },
+      });
+    }
   } catch (error) {
     content.innerHTML = `<p style="color: #c62828;">❌ ${error.message}</p>`;
+    if (chartContainer) chartContainer.style.display = "none";
   }
 };
 
@@ -223,6 +382,95 @@ async function loadRoomStatistics() {
       .sort((a, b) => b.contractCount - a.contractCount)
       .slice(0, 10);
 
+    // Draw room popularity bar chart
+    const chartContainer = document.getElementById(
+      "roomPopularityChartContainer"
+    );
+    const chartCtx = document.getElementById("roomPopularityChart");
+    if (chartCtx && chartContainer) {
+      if (roomPopularityChart) roomPopularityChart.destroy();
+      chartContainer.style.display = "block";
+
+      const top10 = sortedRooms.slice(0, 10);
+      const roomNames = top10.map((stat) => stat.room.name);
+      const contractCounts = top10.map((stat) => stat.contractCount);
+      const revenues = top10.map((stat) => stat.totalRevenue);
+
+      roomPopularityChart = new Chart(chartCtx, {
+        type: "bar",
+        data: {
+          labels: roomNames,
+          datasets: [
+            {
+              label: "Số lần thuê",
+              data: contractCounts,
+              backgroundColor: "rgba(33, 150, 243, 0.6)",
+              borderColor: "#2196f3",
+              borderWidth: 1,
+              yAxisID: "y",
+            },
+            {
+              label: "Doanh thu (VNĐ)",
+              data: revenues,
+              backgroundColor: "rgba(76, 175, 80, 0.6)",
+              borderColor: "#4caf50",
+              borderWidth: 1,
+              yAxisID: "y1",
+            },
+          ],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: true,
+          plugins: {
+            legend: {
+              position: "top",
+            },
+            tooltip: {
+              callbacks: {
+                label: function (context) {
+                  if (context.datasetIndex === 0) {
+                    return `Số lần thuê: ${context.parsed.y}`;
+                  } else {
+                    return `Doanh thu: ${formatPrice(context.parsed.y)}`;
+                  }
+                },
+              },
+            },
+          },
+          scales: {
+            y: {
+              type: "linear",
+              display: true,
+              position: "left",
+              title: {
+                display: true,
+                text: "Số lần thuê",
+              },
+              beginAtZero: true,
+            },
+            y1: {
+              type: "linear",
+              display: true,
+              position: "right",
+              title: {
+                display: true,
+                text: "Doanh thu (VNĐ)",
+              },
+              grid: {
+                drawOnChartArea: false,
+              },
+              ticks: {
+                callback: function (value) {
+                  return formatPrice(value);
+                },
+              },
+            },
+          },
+        },
+      });
+    }
+
     // Render popularity cards
     if (popularityContent) {
       popularityContent.innerHTML = `
@@ -281,10 +529,12 @@ async function loadRoomStatistics() {
 // Load debt report
 async function loadDebtReport() {
   const content = document.getElementById("debtContent");
+  const chartContainer = document.getElementById("debtChartContainer");
   if (!content) return;
 
   content.innerHTML =
     '<div class="loading"><div class="spinner"></div><p>Đang tải dữ liệu...</p></div>';
+  if (chartContainer) chartContainer.style.display = "none";
 
   try {
     const response = await fetch("/api/reports/debt", {
@@ -352,8 +602,65 @@ async function loadDebtReport() {
         </tbody>
       </table>
     `;
+
+    // Draw debt analysis chart
+    const chartCtx = document.getElementById("debtChart");
+    if (chartCtx && chartContainer && data.details && data.details.length > 0) {
+      if (debtChart) debtChart.destroy();
+      chartContainer.style.display = "block";
+
+      // Calculate statistics for chart
+      const totalAmount = data.details.reduce(
+        (sum, b) => sum + b.total_amount,
+        0
+      );
+      const paidAmount = data.details.reduce(
+        (sum, b) => sum + b.paid_amount,
+        0
+      );
+      const debtAmount = data.details.reduce(
+        (sum, b) => sum + b.debt_amount,
+        0
+      );
+
+      debtChart = new Chart(chartCtx, {
+        type: "doughnut",
+        data: {
+          labels: ["Đã thanh toán", "Còn nợ"],
+          datasets: [
+            {
+              data: [paidAmount, debtAmount],
+              backgroundColor: ["#4caf50", "#f44336"],
+              borderWidth: 2,
+              borderColor: "#fff",
+            },
+          ],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: true,
+          plugins: {
+            legend: {
+              position: "bottom",
+            },
+            tooltip: {
+              callbacks: {
+                label: function (context) {
+                  const label = context.label || "";
+                  const value = context.parsed || 0;
+                  const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                  const percentage = ((value / total) * 100).toFixed(1);
+                  return `${label}: ${formatPrice(value)} (${percentage}%)`;
+                },
+              },
+            },
+          },
+        },
+      });
+    }
   } catch (error) {
     content.innerHTML = `<p style="color: #c62828;">❌ ${error.message}</p>`;
+    if (chartContainer) chartContainer.style.display = "none";
   }
 }
 
@@ -371,3 +678,10 @@ document.addEventListener("DOMContentLoaded", function () {
     }
   }
 });
+
+// Notify that tenants.js is ready
+if (typeof window.scriptsLoaded === "undefined") {
+  window.scriptsLoaded = {};
+}
+window.scriptsLoaded.reports = true;
+console.log("reports.js loaded");

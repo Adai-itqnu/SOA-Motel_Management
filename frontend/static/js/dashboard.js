@@ -51,9 +51,14 @@ async function loadDashboardStats() {
     // Revenue stats
     if (reportsRes.ok) {
       const reportsData = await reportsRes.json();
-      const revenue = reportsData.finance?.total_revenue || 0;
-      const monthlyRevenueEl = document.getElementById("monthlyRevenue");
-      if (monthlyRevenueEl) monthlyRevenueEl.textContent = formatPrice(revenue);
+      if (reportsData && reportsData.finance) {
+        const revenue = reportsData.finance.total_revenue || 0;
+        const monthlyRevenueEl = document.getElementById("monthlyRevenue");
+        if (monthlyRevenueEl)
+          monthlyRevenueEl.textContent = formatPrice(revenue);
+      }
+    } else {
+      console.error("Failed to load reports overview:", reportsRes.status);
     }
 
     // Load quick stats
@@ -66,51 +71,70 @@ async function loadDashboardStats() {
 // Load quick stats
 async function loadQuickStats() {
   try {
+    const headers = getAuthHeader();
     const [roomsRes, tenantsRes, contractsRes, reportsRes] = await Promise.all([
-      fetch("/api/rooms/stats", { headers: getAuthHeader() }),
-      fetch("/api/tenants", { headers: getAuthHeader() }),
-      fetch("/api/contracts?status=active", { headers: getAuthHeader() }),
-      fetch("/api/reports/overview", { headers: getAuthHeader() }),
+      fetch("/api/rooms/stats", { headers }),
+      fetch("/api/tenants", { headers }),
+      fetch("/api/contracts?status=active", { headers }),
+      fetch("/api/reports/overview", { headers }),
     ]);
 
     const stats = [];
 
     if (roomsRes.ok) {
       const roomStats = await roomsRes.json();
-      stats.push({
-        icon: "🏠",
-        title: `Tổng ${roomStats.total} phòng`,
-        desc: `${roomStats.available} trống, ${roomStats.occupied} đã cho thuê`,
-      });
+      if (roomStats && typeof roomStats.total !== "undefined") {
+        stats.push({
+          icon: "🏠",
+          title: `Tổng ${roomStats.total || 0} phòng`,
+          desc: `${roomStats.available || 0} trống, ${
+            roomStats.occupied || 0
+          } đã cho thuê`,
+        });
+      }
+    } else {
+      console.error("Failed to load room stats:", roomsRes.status);
     }
 
     if (tenantsRes.ok) {
       const tenantsData = await tenantsRes.json();
-      stats.push({
-        icon: "👥",
-        title: `${tenantsData.total} người thuê`,
-        desc: "Đang quản lý trong hệ thống",
-      });
+      if (tenantsData && typeof tenantsData.total !== "undefined") {
+        stats.push({
+          icon: "👥",
+          title: `${tenantsData.total || 0} người thuê`,
+          desc: "Đang quản lý trong hệ thống",
+        });
+      }
+    } else {
+      console.error("Failed to load tenants:", tenantsRes.status);
     }
 
     if (contractsRes.ok) {
       const contractsData = await contractsRes.json();
-      stats.push({
-        icon: "📄",
-        title: `${contractsData.total} hợp đồng đang hoạt động`,
-        desc: "Hợp đồng thuê phòng hiện tại",
-      });
+      if (contractsData && typeof contractsData.total !== "undefined") {
+        stats.push({
+          icon: "📄",
+          title: `${contractsData.total || 0} hợp đồng đang hoạt động`,
+          desc: "Hợp đồng thuê phòng hiện tại",
+        });
+      }
+    } else {
+      console.error("Failed to load contracts:", contractsRes.status);
     }
 
     if (reportsRes.ok) {
       const reportsData = await reportsRes.json();
-      const revenue = reportsData.finance?.total_revenue || 0;
-      const debt = reportsData.finance?.total_debt || 0;
-      stats.push({
-        icon: "💰",
-        title: `Doanh thu: ${formatPrice(revenue)}`,
-        desc: `Còn nợ: ${formatPrice(debt)}`,
-      });
+      if (reportsData && reportsData.finance) {
+        const revenue = reportsData.finance.total_revenue || 0;
+        const debt = reportsData.finance.total_debt || 0;
+        stats.push({
+          icon: "💰",
+          title: `Doanh thu: ${formatPrice(revenue)}`,
+          desc: `Còn nợ: ${formatPrice(debt)}`,
+        });
+      }
+    } else {
+      console.error("Failed to load reports:", reportsRes.status);
     }
 
     renderQuickStats(stats);
@@ -119,7 +143,9 @@ async function loadQuickStats() {
     const quickStatsEl = document.getElementById("quickStats");
     if (quickStatsEl) {
       quickStatsEl.innerHTML =
-        '<p style="color: #c62828;">❌ Không thể tải thống kê</p>';
+        '<p style="color: #c62828;">❌ Không thể tải thống kê: ' +
+        error.message +
+        "</p>";
     }
   }
 }
@@ -149,3 +175,9 @@ function renderQuickStats(stats) {
     )
     .join("");
 }
+// Notify that tenants.js is ready
+if (typeof window.scriptsLoaded === "undefined") {
+  window.scriptsLoaded = {};
+}
+window.scriptsLoaded.dashboard = true;
+console.log("dashboard.js loaded");

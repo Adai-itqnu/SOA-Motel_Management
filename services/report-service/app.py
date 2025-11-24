@@ -73,9 +73,15 @@ def fetch_service_data(service_name, endpoint, token):
         if not service_url:
             return None
         
+        # Ensure token has correct Bearer prefix
+        if token and (token.startswith('Bearer ') or token.startswith('bearer ')):
+            auth_header = token
+        else:
+            auth_header = f'Bearer {token}'
+        
         response = requests.get(
             f"{service_url}{endpoint}",
-            headers={'Authorization': f'Bearer {token}'},
+            headers={'Authorization': auth_header},
             timeout=10
         )
         
@@ -258,7 +264,7 @@ def get_overview_report(current_user):
     
     # Lấy dữ liệu từ các service khác
     rooms_data = fetch_service_data('room-service', '/api/rooms/stats', token)
-    contracts_data = fetch_service_data('tenant-service', '/api/contracts?status=active', token)
+    contracts_data = fetch_service_data('contract-service', '/api/contracts?status=active', token)
     
     # Thống kê hóa đơn
     total_bills = bills_collection.count_documents({})
@@ -266,13 +272,24 @@ def get_overview_report(current_user):
     unpaid_bills = bills_collection.count_documents({'status': 'unpaid'})
     partial_bills = bills_collection.count_documents({'status': 'partial'})
     
-    # Tính tổng doanh thu
+    # Tính tổng doanh thu từ bills (thanh toán hàng tháng)
     pipeline_revenue = [
         {'$match': {'status': 'paid'}},
         {'$group': {'_id': None, 'total': {'$sum': '$total_amount'}}}
     ]
     revenue_result = list(bills_collection.aggregate(pipeline_revenue))
-    total_revenue = revenue_result[0]['total'] if revenue_result else 0
+    revenue_from_bills = revenue_result[0]['total'] if revenue_result else 0
+    
+    # Tính tổng tiền cọc từ contracts (deposit) - lấy tất cả contracts
+    all_contracts_data = fetch_service_data('contract-service', '/api/contracts', token)
+    revenue_from_deposits = 0
+    if all_contracts_data and all_contracts_data.get('contracts'):
+        for contract in all_contracts_data['contracts']:
+            # Tính deposit từ tất cả contracts (kể cả đã kết thúc)
+            revenue_from_deposits += float(contract.get('deposit', 0))
+    
+    # Tổng doanh thu = tiền cọc + thanh toán từ bills
+    total_revenue = revenue_from_bills + revenue_from_deposits
     
     # Tính tổng nợ
     pipeline_debt = [
@@ -313,7 +330,9 @@ def get_overview_report(current_user):
 @admin_required
 def get_revenue_report(current_user):
     year = request.args.get('year', datetime.datetime.now().year)
+    token = request.headers.get('Authorization')
     
+    # Tính doanh thu từ bills (thanh toán hàng tháng)
     pipeline = [
         {'$match': {'year': int(year), 'status': 'paid'}},
         {'$group': {
@@ -326,13 +345,35 @@ def get_revenue_report(current_user):
     
     result = list(bills_collection.aggregate(pipeline))
     
-    # Tạo data cho 12 tháng
+    # Tính tiền cọc từ contracts được tạo trong năm đó
+    contracts_data = fetch_service_data('contract-service', '/api/contracts', token)
+    deposits_by_month = {}
+    if contracts_data and contracts_data.get('contracts'):
+        for contract in contracts_data['contracts']:
+            try:
+                created_date = datetime.datetime.fromisoformat(contract.get('created_at', ''))
+                if created_date.year == int(year):
+                    month = created_date.month
+                    deposit = float(contract.get('deposit', 0))
+                    if month not in deposits_by_month:
+                        deposits_by_month[month] = 0
+                    deposits_by_month[month] += deposit
+            except:
+                pass
+    
+    # Tạo data cho 12 tháng (bills + deposits)
     revenue_by_month = []
     for month in range(1, 13):
         month_data = next((item for item in result if item['_id'] == month), None)
+        bills_revenue = month_data['revenue'] if month_data else 0
+        deposits_revenue = deposits_by_month.get(month, 0)
+        total_month_revenue = bills_revenue + deposits_revenue
+        
         revenue_by_month.append({
             'month': month,
-            'revenue': month_data['revenue'] if month_data else 0,
+            'revenue': total_month_revenue,
+            'bills_revenue': bills_revenue,
+            'deposits_revenue': deposits_revenue,
             'bills_count': month_data['bills_count'] if month_data else 0
         })
     
@@ -362,7 +403,7 @@ def get_debt_report(current_user):
         # Lấy thông tin tenant từ Tenant Service
         if bill.get('contract_id'):
             contract_data = fetch_service_data(
-                'tenant-service', 
+                'contract-service', 
                 f"/api/contracts/{bill['contract_id']}", 
                 token
             )
@@ -407,7 +448,7 @@ def get_room_report(current_user, room_id):
     room_data = fetch_service_data('room-service', f'/api/rooms/{room_id}', token)
     
     # Lấy hợp đồng hiện tại
-    contracts_data = fetch_service_data('tenant-service', f'/api/contracts/room/{room_id}', token)
+    contracts_data = fetch_service_data('contract-service', f'/api/contracts/room/{room_id}', token)
     
     # Lấy hóa đơn của phòng
     bills = list(bills_collection.find({'room_id': room_id}).sort('created_at', -1))

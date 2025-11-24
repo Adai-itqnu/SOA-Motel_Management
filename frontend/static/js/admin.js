@@ -105,7 +105,70 @@ window.navigateToSection = function navigateToSection(section) {
   loadSectionData(section);
 };
 
-// Load section data
+// Wait for a function to be available (with timeout)
+function waitForFunction(functionName, timeout = 5000, interval = 50) {
+  return new Promise((resolve, reject) => {
+    const startTime = Date.now();
+    const checkFunction = () => {
+      if (typeof window[functionName] === "function") {
+        resolve(window[functionName]);
+      } else if (Date.now() - startTime >= timeout) {
+        reject(new Error(`Function ${functionName} not available after ${timeout}ms`));
+      } else {
+        setTimeout(checkFunction, interval);
+      }
+    };
+    checkFunction();
+  });
+}
+
+// Wait for tenants.js to be ready
+async function waitForTenants() {
+  try {
+    await waitForFunction("initializeTenantsHandlers", 3000);
+    await waitForFunction("loadTenantsData", 3000);
+    await waitForFunction("switchTenantTab", 3000);
+    return true;
+  } catch (error) {
+    console.error("Error waiting for tenants functions:", error);
+    return false;
+  }
+}
+
+// Wait for rooms.js to be ready
+async function waitForRooms() {
+  try {
+    await waitForFunction("loadRoomsData", 3000);
+    return true;
+  } catch (error) {
+    console.error("Error waiting for rooms functions:", error);
+    return false;
+  }
+}
+
+// Wait for dashboard.js to be ready
+async function waitForDashboard() {
+  try {
+    await waitForFunction("loadDashboardStats", 3000);
+    return true;
+  } catch (error) {
+    console.error("Error waiting for dashboard functions:", error);
+    return false;
+  }
+}
+
+// Wait for reports.js to be ready
+async function waitForReports() {
+  try {
+    await waitForFunction("loadReportsData", 3000);
+    return true;
+  } catch (error) {
+    console.error("Error waiting for reports functions:", error);
+    return false;
+  }
+}
+
+// Load section data with proper waiting
 function loadSectionData(section) {
   switch (section) {
     case "dashboard":
@@ -120,30 +183,20 @@ function loadSectionData(section) {
       break;
     case "tenants":
       console.log("Loading tenants section...");
-      // Initialize handlers first
-      if (typeof initializeTenantsHandlers === "function") {
-        console.log("Initializing tenants handlers...");
-        setTimeout(() => {
-          initializeTenantsHandlers();
-          // Switch to tenants tab and load data
-          if (typeof switchTenantTab === "function") {
-            console.log("Switching to tenants tab...");
-            switchTenantTab("tenants");
-          } else {
-            // Fallback: load data directly
-            if (typeof loadTenantsData === "function") {
-              console.log("Loading tenants data directly...");
-              loadTenantsData();
-            }
-          }
-        }, 150);
-      } else {
-        console.error("initializeTenantsHandlers function not found!");
-        // Fallback: try to load data anyway
-        if (typeof loadTenantsData === "function") {
-          console.log("Loading tenants data (fallback)...");
-          loadTenantsData();
-        }
+      if (typeof loadTenantsData === "function") {
+        loadTenantsData();
+      }
+      break;
+    case "contracts":
+      console.log("Loading contracts section...");
+      if (typeof loadContractsData === "function") {
+        loadContractsData();
+      }
+      break;
+    case "bookings":
+      console.log("Loading bookings section...");
+      if (typeof loadBookingsData === "function") {
+        loadBookingsData();
       }
       break;
     case "reports":
@@ -154,10 +207,10 @@ function loadSectionData(section) {
   }
 }
 
-// Initialize
-document.addEventListener("DOMContentLoaded", function () {
+// Expose initialization function
+window.initializeAdmin = function() {
   if (!checkAuth()) return;
-
+  
   // Set default section
   const defaultSection = "dashboard";
   navigateToSection(defaultSection);
@@ -171,4 +224,4 @@ document.addEventListener("DOMContentLoaded", function () {
       }
     });
   });
-});
+};

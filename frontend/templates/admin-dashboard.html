@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Admin Dashboard - Quản lý Nhà Trọ</title>
     <link rel="stylesheet" href="/static/css/admin.css" />
+    <!-- Chart.js for data visualization -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   </head>
   <body>
     <!-- Header -->
@@ -41,6 +43,14 @@
             <a class="menu-item" data-section="tenants">
               <span class="menu-item-icon">👥</span>
               <span class="menu-item-text">Quản lý Người Thuê</span>
+            </a>
+            <a class="menu-item" data-section="contracts">
+              <span class="menu-item-icon">📄</span>
+              <span class="menu-item-text">Quản lý Hợp Đồng</span>
+            </a>
+            <a class="menu-item" data-section="bookings">
+              <span class="menu-item-icon">📅</span>
+              <span class="menu-item-text">Quản lý Booking</span>
             </a>
             <a class="menu-item" data-section="reports">
               <span class="menu-item-icon">📈</span>
@@ -82,7 +92,7 @@
               <div class="stat-value" id="totalTenants">-</div>
             </div>
 
-            <div class="stat-card" onclick="navigateToSection('tenants')">
+            <div class="stat-card" onclick="navigateToSection('contracts')">
               <div class="stat-card-header">
                 <div class="stat-icon">📄</div>
               </div>
@@ -203,32 +213,16 @@
             "
           >
             <div>
-              <div class="page-title">Quản lý Người Thuê & Hợp Đồng</div>
+              <div class="page-title">Quản lý Người Thuê</div>
             </div>
             <div>
               <button class="btn-primary" onclick="openCreateTenantModal()">
                 + Thêm người thuê
               </button>
-              <button
-                class="btn-primary"
-                onclick="openCreateContractModal()"
-                style="margin-left: 10px"
-              >
-                + Tạo hợp đồng
-              </button>
             </div>
           </div>
 
-          <div class="tabs">
-            <button class="tab active" onclick="switchTenantTab('tenants')">
-              Người Thuê
-            </button>
-            <button class="tab" onclick="switchTenantTab('contracts')">
-              Hợp Đồng
-            </button>
-          </div>
-
-          <!-- Tenants Tab -->
+          <!-- Tenants Content -->
           <div id="tenantsTabContent" class="content-section">
             <div class="filters">
               <div class="filter-item">
@@ -263,13 +257,33 @@
               </table>
             </div>
           </div>
+        </div>
 
-          <!-- Contracts Tab -->
+        <!-- Contracts Panel -->
+        <div id="contractsPanel" class="content-panel">
           <div
-            id="contractsTabContent"
-            class="content-section"
-            style="display: none"
+            style="
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+              margin-bottom: 30px;
+            "
           >
+            <div>
+              <div class="page-title">Quản lý Hợp Đồng</div>
+            </div>
+            <div>
+              <button
+                class="btn-primary"
+                onclick="openCreateContractModal()"
+              >
+                + Tạo hợp đồng
+              </button>
+            </div>
+          </div>
+
+          <!-- Contracts Content -->
+          <div id="contractsTabContent" class="content-section">
             <div class="filters">
               <div class="filter-item">
                 <input
@@ -303,6 +317,63 @@
                   </tr>
                 </thead>
                 <tbody id="contractsTableBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- Bookings Panel -->
+        <div id="bookingsPanel" class="content-panel">
+          <div
+            style="
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+              margin-bottom: 30px;
+            "
+          >
+            <div>
+              <div class="page-title">Quản lý Booking Requests</div>
+            </div>
+          </div>
+
+          <!-- Bookings Content -->
+          <div id="bookingsTabContent" class="content-section">
+            <div class="filters">
+              <div class="filter-item">
+                <input
+                  type="text"
+                  id="bookingSearchInput"
+                  placeholder="Tìm kiếm booking..."
+                />
+              </div>
+              <div class="filter-item">
+                <select id="bookingStatusFilter">
+                  <option value="">Tất cả trạng thái</option>
+                  <option value="pending">Đang chờ duyệt</option>
+                  <option value="approved">Đã duyệt</option>
+                  <option value="rejected">Đã từ chối</option>
+                  <option value="cancelled">Đã hủy</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="table-container">
+              <table id="bookingsTable">
+                <thead>
+                  <tr>
+                    <th>Mã booking</th>
+                    <th>Người thuê</th>
+                    <th>Phòng</th>
+                    <th>Ngày bắt đầu</th>
+                    <th>Ngày kết thúc</th>
+                    <th>Giá thuê/tháng</th>
+                    <th>Tiền cọc</th>
+                    <th>Trạng thái</th>
+                    <th>Hành động</th>
+                  </tr>
+                </thead>
+                <tbody id="bookingsTableBody"></tbody>
               </table>
             </div>
           </div>
@@ -355,6 +426,38 @@
                 <div class="stat-label">Tỷ lệ thu hồi</div>
               </div>
             </div>
+            <!-- Charts for Overview -->
+            <div
+              style="
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+                gap: 20px;
+                margin-top: 30px;
+              "
+            >
+              <div
+                style="
+                  background: white;
+                  padding: 20px;
+                  border-radius: 8px;
+                  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+                "
+              >
+                <h3 style="margin-top: 0">Tỷ lệ lấp đầy phòng</h3>
+                <canvas id="roomOccupancyChart"></canvas>
+              </div>
+              <div
+                style="
+                  background: white;
+                  padding: 20px;
+                  border-radius: 8px;
+                  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+                "
+              >
+                <h3 style="margin-top: 0">Tỷ lệ thu hồi công nợ</h3>
+                <canvas id="debtCollectionChart"></canvas>
+              </div>
+            </div>
           </div>
 
           <!-- Revenue Tab -->
@@ -380,6 +483,23 @@
                 <p>Đang tải dữ liệu...</p>
               </div>
             </div>
+            <!-- Chart container for revenue -->
+            <div
+              id="revenueChartContainer"
+              style="margin-top: 20px; display: none"
+            >
+              <div
+                style="
+                  background: white;
+                  padding: 20px;
+                  border-radius: 8px;
+                  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+                "
+              >
+                <h3>Biểu đồ doanh thu theo tháng</h3>
+                <canvas id="revenueChart"></canvas>
+              </div>
+            </div>
           </div>
 
           <!-- Rooms Statistics Tab -->
@@ -389,6 +509,23 @@
             style="display: none"
           >
             <h2>Thống Kê Phòng - Mức Độ Quan Tâm</h2>
+            <!-- Chart for room popularity -->
+            <div
+              id="roomPopularityChartContainer"
+              style="margin-bottom: 30px; display: none"
+            >
+              <div
+                style="
+                  background: white;
+                  padding: 20px;
+                  border-radius: 8px;
+                  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+                "
+              >
+                <h3>Top 10 phòng được thuê nhiều nhất</h3>
+                <canvas id="roomPopularityChart"></canvas>
+              </div>
+            </div>
             <div id="roomPopularityContent">
               <div class="loading">
                 <div class="spinner"></div>
@@ -427,6 +564,23 @@
             style="display: none"
           >
             <h2>Báo Cáo Công Nợ</h2>
+            <!-- Chart for debt analysis -->
+            <div
+              id="debtChartContainer"
+              style="margin-bottom: 30px; display: none"
+            >
+              <div
+                style="
+                  background: white;
+                  padding: 20px;
+                  border-radius: 8px;
+                  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+                "
+              >
+                <h3>Phân tích công nợ</h3>
+                <canvas id="debtChart"></canvas>
+              </div>
+            </div>
             <div id="debtContent">
               <div class="loading">
                 <div class="spinner"></div>
@@ -461,6 +615,32 @@
           <div class="form-group">
             <label>Giá thuê (VNĐ) *</label>
             <input type="number" id="roomPrice" required />
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Tiền cọc (VNĐ) *</label>
+              <input type="number" id="roomDeposit" required />
+            </div>
+            <div class="form-group">
+              <label>Ngày thanh toán hàng tháng</label>
+              <input
+                type="number"
+                id="roomPaymentDay"
+                min="1"
+                max="31"
+                value="5"
+              />
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Giá điện (VNĐ/kWh)</label>
+              <input type="number" id="roomElectricPrice" value="3500" />
+            </div>
+            <div class="form-group">
+              <label>Giá nước (VNĐ/m³)</label>
+              <input type="number" id="roomWaterPrice" value="20000" />
+            </div>
           </div>
           <div class="form-group">
             <label>Trạng thái</label>
@@ -522,6 +702,24 @@
           <div class="form-group">
             <label>Email</label>
             <input type="email" id="tenantEmail" />
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Tên đăng nhập (để đăng nhập hệ thống)</label>
+              <input
+                type="text"
+                id="tenantUsername"
+                placeholder="Tự động tạo nếu để trống"
+              />
+            </div>
+            <div class="form-group">
+              <label>Mật khẩu (mặc định: 123456)</label>
+              <input
+                type="password"
+                id="tenantPassword"
+                placeholder="Để trống = 123456"
+              />
+            </div>
           </div>
           <div class="form-group">
             <label>Trạng thái</label>
@@ -620,10 +818,39 @@
     </div>
 
     <!-- Scripts -->
-    <script src="/static/js/admin.js"></script>
-    <script src="/static/js/dashboard.js"></script>
-    <script src="/static/js/rooms.js"></script>
-    <script src="/static/js/tenants.js"></script>
-    <script src="/static/js/reports.js"></script>
+    <!-- Load admin.js FIRST (no defer) to expose getAuthHeader and utilities -->
+    <script src="{{ url_for('static', filename='js/admin.js') }}"></script>
+    <!-- Load other scripts (they depend on admin.js) -->
+    <script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/rooms.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/tenants.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/contracts.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/bookings.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/reports.js') }}"></script>
+    <script>
+      // Wait for all scripts then initialize
+      document.addEventListener("DOMContentLoaded", function () {
+        const checkReady = () => {
+          if (
+            window.scriptsLoaded?.tenants &&
+            window.scriptsLoaded?.contracts &&
+            window.scriptsLoaded?.bookings &&
+            window.scriptsLoaded?.rooms &&
+            window.scriptsLoaded?.dashboard &&
+            window.scriptsLoaded?.reports
+          ) {
+            console.log("All scripts ready, initializing admin...");
+            if (typeof window.initializeAdmin === "function") {
+              window.initializeAdmin();
+            } else {
+              console.error("initializeAdmin function not found!");
+            }
+          } else {
+            setTimeout(checkReady, 50);
+          }
+        };
+        checkReady();
+      });
+    </script>
   </body>
 </html>

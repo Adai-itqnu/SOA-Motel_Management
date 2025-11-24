@@ -4,8 +4,9 @@ import datetime
 import jwt
 from functools import wraps
 import requests
+from bson import ObjectId
 from config import JWT_SECRET, SERVICE_NAME, SERVICE_PORT, CONSUL_HOST, CONSUL_PORT
-from model import tenants_collection, contracts_collection
+from model import tenants_collection
 from service_registry import register_service
 
 app = Flask(__name__)
@@ -66,48 +67,17 @@ def get_service_url(service_name):
         print(f"Error getting service URL: {e}")
         return None
 
-# Helper function: Check if room exists and is available
-def check_room_availability(room_id, token):
-    try:
-        room_service_url = get_service_url('room-service')
-        if not room_service_url:
-            return None, "Không thể kết nối tới Room Service"
-        
-        response = requests.get(
-            f"{room_service_url}/api/rooms/{room_id}",
-            headers={'Authorization': f'Bearer {token}'},
-            timeout=5
-        )
-        
-        if response.ok:
-            room = response.json()
-            return room, None
-        else:
-            return None, "Phòng không tồn tại"
-    except Exception as e:
-        return None, f"Lỗi kết nối Room Service: {str(e)}"
-
-# Helper function: Update room status
-def update_room_status(room_id, status, tenant_id, token):
-    try:
-        room_service_url = get_service_url('room-service')
-        if not room_service_url:
-            return False
-        
-        response = requests.put(
-            f"{room_service_url}/api/rooms/{room_id}",
-            json={'status': status, 'tenant_id': tenant_id},
-            headers={
-                'Authorization': f'Bearer {token}',
-                'Content-Type': 'application/json'
-            },
-            timeout=5
-        )
-        
-        return response.ok
-    except Exception as e:
-        print(f"Error updating room status: {e}")
-        return False
+# Helper function: Convert string to ObjectId
+def to_object_id(id_value):
+    """Convert string ID to ObjectId if needed"""
+    if isinstance(id_value, ObjectId):
+        return id_value
+    if isinstance(id_value, str):
+        try:
+            return ObjectId(id_value)
+        except Exception:
+            return id_value  # Return as-is if conversion fails
+    return id_value
 
 # Health check endpoint
 @app.route('/health', methods=['GET'])
@@ -116,57 +86,122 @@ def health_check():
 
 # ============== TENANT APIs ==============
 
-# API Lấy danh sách người thuê
+# API Lấy danh sách người thuê (lấy từ users collection, role != 'admin')
 @app.route('/api/tenants', methods=['GET'])
 @token_required
 @admin_required
 def get_tenants(current_user):
-    search = request.args.get('search', '')
-    status = request.args.get('status', '')
-    
-    query = {}
-    if search:
-        query['$or'] = [
-            {'name': {'$regex': search, '$options': 'i'}},
-            {'phone': {'$regex': search, '$options': 'i'}},
-            {'id_card': {'$regex': search, '$options': 'i'}}
-        ]
-    if status:
-        query['status'] = status
-    
-    tenants = list(tenants_collection.find(query).sort('created_at', -1))
-    
-    for tenant in tenants:
-        tenant['id'] = tenant['_id']
-    
-    return jsonify({'tenants': tenants, 'total': len(tenants)}), 200
+    try:
+        search = request.args.get('search', '').strip()
+        status = request.args.get('status', '').strip()
+        
+        # Lấy tất cả users (trừ admin), có thể filter theo role
+        query = {'role': {'$ne': 'admin'}}  # Lấy user và tenant, không lấy admin
+        
+        if search:
+            # Kết hợp điều kiện search với điều kiện role
+            search_conditions = [
+                {'name': {'$regex': search, '$options': 'i'}},
+                {'phone': {'$regex': search, '$options': 'i'}},
+                {'id_card': {'$regex': search, '$options': 'i'}},
+                {'username': {'$regex': search, '$options': 'i'}},
+                {'email': {'$regex': search, '$options': 'i'}}
+            ]
+            # Tạo query mới với $and để kết hợp cả role và search
+            query = {
+                '$and': [
+                    {'role': {'$ne': 'admin'}},
+                    {'$or': search_conditions}
+                ]
+            }
+        if status:
+            # Nếu đã có $and thì thêm vào, nếu không thì thêm trực tiếp
+            if '$and' in query:
+                query['$and'].append({'status': status})
+            else:
+                query['status'] = status
+        
+        tenants_cursor = tenants_collection.find(query).sort('created_at', -1)
+        tenants = list(tenants_cursor)
+        
+        # Process tenants to format data
+        result_tenants = []
+        for tenant in tenants:
+            tenant_dict = {}
+            # Convert all fields to JSON-serializable format
+            for key, value in tenant.items():
+                # Bỏ qua password_hash
+                if key == 'password_hash':
+                    continue
+                if isinstance(value, ObjectId):
+                    tenant_dict[key] = str(value)
+                elif isinstance(value, datetime.datetime):
+                    tenant_dict[key] = value.isoformat()
+                else:
+                    tenant_dict[key] = value
+            
+            # Ensure 'id' field exists
+            tenant_dict['id'] = tenant_dict.get('_id', '')
+            # Đảm bảo có các trường tenant
+            if 'id_card' not in tenant_dict:
+                tenant_dict['id_card'] = ''
+            if 'address' not in tenant_dict:
+                tenant_dict['address'] = ''
+            if 'status' not in tenant_dict:
+                tenant_dict['status'] = 'active'
+            
+            result_tenants.append(tenant_dict)
+        
+        return jsonify({
+            'tenants': result_tenants, 
+            'total': len(result_tenants)
+        }), 200
+        
+    except Exception as e:
+        print(f"Error in get_tenants: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'message': f'Lỗi khi lấy danh sách người thuê: {str(e)}',
+            'tenants': [],
+            'total': 0
+        }), 500
 
 # API Lấy chi tiết người thuê
 @app.route('/api/tenants/<tenant_id>', methods=['GET'])
 @token_required
 def get_tenant(current_user, tenant_id):
+    tenant_id = to_object_id(tenant_id)
     tenant = tenants_collection.find_one({'_id': tenant_id})
     
     if not tenant:
         return jsonify({'message': 'Người thuê không tồn tại!'}), 404
     
     tenant['id'] = tenant['_id']
+    # Bỏ password_hash khỏi response
+    tenant.pop('password_hash', None)
     
-    # Lấy danh sách hợp đồng của tenant
-    contracts = list(contracts_collection.find({'tenant_id': tenant_id}).sort('start_date', -1))
-    for contract in contracts:
-        contract['id'] = contract['_id']
+    # Đảm bảo có các trường tenant
+    if 'id_card' not in tenant:
+        tenant['id_card'] = ''
+    if 'address' not in tenant:
+        tenant['address'] = ''
+    if 'status' not in tenant:
+        tenant['status'] = 'active'
     
-    tenant['contracts'] = contracts
+    # Lấy danh sách hợp đồng của tenant từ contract-service (nếu cần)
+    # Có thể gọi contract-service API sau nếu cần hiển thị contracts trong tenant detail
+    tenant['contracts'] = []  # Tạm thời để trống, có thể gọi contract-service sau
     
     return jsonify(tenant), 200
 
-# API Tạo người thuê mới
+# API Tạo người thuê mới (tạo user account với thông tin tenant)
 @app.route('/api/tenants', methods=['POST'])
 @token_required
 @admin_required
 def create_tenant(current_user):
     data = request.get_json()
+    token = request.headers.get('Authorization') or request.headers.get('authorization')
     
     # Validation
     required_fields = ['name', 'phone', 'id_card', 'address']
@@ -174,33 +209,84 @@ def create_tenant(current_user):
         if field not in data:
             return jsonify({'message': f'Thiếu trường {field}!'}), 400
     
-    # Kiểm tra CMND/CCCD đã tồn tại
-    if tenants_collection.find_one({'id_card': data['id_card']}):
-        return jsonify({'message': 'CMND/CCCD đã tồn tại!'}), 400
+    # Kiểm tra CMND/CCCD đã tồn tại (nếu có)
+    if data.get('id_card'):
+        existing = tenants_collection.find_one({'id_card': data['id_card']})
+        if existing:
+            return jsonify({'message': 'CMND/CCCD đã tồn tại!'}), 400
     
-    # Tạo tenant_id tự động
-    tenant_count = tenants_collection.count_documents({})
-    tenant_id = f"T{tenant_count + 1:04d}"
+    # Kiểm tra phone đã tồn tại
+    existing_phone = tenants_collection.find_one({'phone': data['phone']})
+    if existing_phone:
+        return jsonify({'message': 'Số điện thoại đã được sử dụng!'}), 400
     
-    new_tenant = {
-        '_id': tenant_id,
+    # Tạo username tự động nếu không có
+    username = data.get('username', '')
+    if not username:
+        phone_clean = data['phone'].replace(' ', '').replace('-', '')
+        username = f"user_{phone_clean}"
+        # Đảm bảo username unique
+        counter = 1
+        while tenants_collection.find_one({'username': username}):
+            username = f"user_{phone_clean}_{counter}"
+            counter += 1
+    
+    # Kiểm tra username đã tồn tại
+    if tenants_collection.find_one({'username': username}):
+        return jsonify({'message': 'Tên đăng nhập đã tồn tại!'}), 400
+    
+    # Tạo password mặc định
+    password = data.get('password', '123456')
+    
+    # Tạo user account (dùng chung users collection)
+    # Tìm user_id lớn nhất để tạo ID mới
+    existing_users = list(tenants_collection.find({}, {'_id': 1}).sort('_id', -1).limit(1))
+    if existing_users and existing_users[0].get('_id'):
+        last_id = existing_users[0]['_id']
+        if last_id.startswith('U'):
+            try:
+                last_num = int(last_id[1:])
+                user_id = f"U{last_num + 1:03d}"
+            except:
+                user_count = tenants_collection.count_documents({})
+                user_id = f"U{user_count + 1:03d}"
+        else:
+            user_count = tenants_collection.count_documents({})
+            user_id = f"U{user_count + 1:03d}"
+    else:
+        user_count = tenants_collection.count_documents({})
+        user_id = f"U{user_count + 1:03d}"
+    
+    # Import từ werkzeug để hash password
+    from werkzeug.security import generate_password_hash
+    
+    new_user = {
+        '_id': user_id,
+        'username': username,
+        'password_hash': generate_password_hash(password),
+        'role': 'user',  # Tất cả tenant mới tạo đều là user
         'name': data['name'],
         'phone': data['phone'],
+        'email': data.get('email', f"{username}@motel.local"),
         'id_card': data['id_card'],
         'address': data['address'],
-        'email': data.get('email', ''),
         'date_of_birth': data.get('date_of_birth', ''),
-        'status': 'active',  # active | inactive
+        'status': 'active',
         'created_at': datetime.datetime.utcnow().isoformat(),
-        'updated_at': datetime.datetime.utcnow().isoformat()
+        'updated_at': datetime.datetime.utcnow().isoformat(),
+        'last_login': None
     }
     
     try:
-        tenants_collection.insert_one(new_tenant)
-        new_tenant['id'] = new_tenant['_id']
+        tenants_collection.insert_one(new_user)
+        new_user['id'] = new_user['_id']
+        # Bỏ password_hash khỏi response
+        new_user.pop('password_hash', None)
         return jsonify({
             'message': 'Tạo người thuê thành công!',
-            'tenant': new_tenant
+            'tenant': new_user,
+            'user_id': user_id,
+            'username': username
         }), 201
     except Exception as e:
         return jsonify({'message': f'Lỗi tạo người thuê: {str(e)}'}), 500
@@ -211,15 +297,23 @@ def create_tenant(current_user):
 @admin_required
 def update_tenant(current_user, tenant_id):
     data = request.get_json()
+    tenant_id = to_object_id(tenant_id)
     
     tenant = tenants_collection.find_one({'_id': tenant_id})
     if not tenant:
         return jsonify({'message': 'Người thuê không tồn tại!'}), 404
     
-    # Kiểm tra CMND/CCCD trùng (nếu đổi)
-    if 'id_card' in data and data['id_card'] != tenant['id_card']:
-        if tenants_collection.find_one({'id_card': data['id_card']}):
+    # Kiểm tra CMND/CCCD trùng (nếu đổi và có giá trị)
+    if 'id_card' in data and data['id_card'] and data['id_card'] != tenant.get('id_card', ''):
+        existing = tenants_collection.find_one({'id_card': data['id_card']})
+        if existing and existing['_id'] != tenant_id:
             return jsonify({'message': 'CMND/CCCD đã tồn tại!'}), 400
+    
+    # Kiểm tra phone trùng (nếu đổi)
+    if 'phone' in data and data['phone'] != tenant.get('phone', ''):
+        existing = tenants_collection.find_one({'phone': data['phone']})
+        if existing and existing['_id'] != tenant_id:
+            return jsonify({'message': 'Số điện thoại đã được sử dụng!'}), 400
     
     # Cập nhật các trường
     update_fields = {}
@@ -239,6 +333,8 @@ def update_tenant(current_user, tenant_id):
         
         updated_tenant = tenants_collection.find_one({'_id': tenant_id})
         updated_tenant['id'] = updated_tenant['_id']
+        # Bỏ password_hash khỏi response
+        updated_tenant.pop('password_hash', None)
         
         return jsonify({
             'message': 'Cập nhật người thuê thành công!',
@@ -247,255 +343,35 @@ def update_tenant(current_user, tenant_id):
     except Exception as e:
         return jsonify({'message': f'Lỗi cập nhật: {str(e)}'}), 500
 
-# API Xóa người thuê
+# API Xóa người thuê (chỉ đánh dấu inactive, không xóa user account)
 @app.route('/api/tenants/<tenant_id>', methods=['DELETE'])
 @token_required
 @admin_required
 def delete_tenant(current_user, tenant_id):
+    tenant_id = to_object_id(tenant_id)
     tenant = tenants_collection.find_one({'_id': tenant_id})
     
     if not tenant:
         return jsonify({'message': 'Người thuê không tồn tại!'}), 404
     
-    # Kiểm tra có hợp đồng đang active không
-    active_contract = contracts_collection.find_one({
-        'tenant_id': tenant_id,
-        'status': 'active'
-    })
-    
-    if active_contract:
-        return jsonify({'message': 'Không thể xóa người thuê đang có hợp đồng!'}), 400
+    # Không cho xóa admin
+    if tenant.get('role') == 'admin':
+        return jsonify({'message': 'Không thể xóa tài khoản admin!'}), 400
     
     try:
-        tenants_collection.delete_one({'_id': tenant_id})
-        return jsonify({'message': 'Xóa người thuê thành công!'}), 200
-    except Exception as e:
-        return jsonify({'message': f'Lỗi xóa người thuê: {str(e)}'}), 500
-
-# ============== CONTRACT APIs ==============
-
-# API Lấy danh sách hợp đồng
-@app.route('/api/contracts', methods=['GET'])
-@token_required
-@admin_required
-def get_contracts(current_user):
-    status = request.args.get('status', '')
-    room_id = request.args.get('room_id', '')
-    
-    query = {}
-    if status:
-        query['status'] = status
-    if room_id:
-        query['room_id'] = room_id
-    
-    contracts = list(contracts_collection.find(query).sort('created_at', -1))
-    
-    for contract in contracts:
-        contract['id'] = contract['_id']
-        # Lấy thông tin tenant
-        tenant = tenants_collection.find_one({'_id': contract['tenant_id']})
-        if tenant:
-            contract['tenant_name'] = tenant['name']
-            contract['tenant_phone'] = tenant['phone']
-    
-    return jsonify({'contracts': contracts, 'total': len(contracts)}), 200
-
-# API Lấy chi tiết hợp đồng
-@app.route('/api/contracts/<contract_id>', methods=['GET'])
-@token_required
-def get_contract(current_user, contract_id):
-    contract = contracts_collection.find_one({'_id': contract_id})
-    
-    if not contract:
-        return jsonify({'message': 'Hợp đồng không tồn tại!'}), 404
-    
-    contract['id'] = contract['_id']
-    
-    # Lấy thông tin tenant
-    tenant = tenants_collection.find_one({'_id': contract['tenant_id']})
-    if tenant:
-        contract['tenant_info'] = {
-            'id': tenant['_id'],
-            'name': tenant['name'],
-            'phone': tenant['phone'],
-            'id_card': tenant['id_card'],
-            'address': tenant['address']
-        }
-    
-    return jsonify(contract), 200
-
-# API Tạo hợp đồng mới
-@app.route('/api/contracts', methods=['POST'])
-@token_required
-@admin_required
-def create_contract(current_user):
-    data = request.get_json()
-    token = request.headers.get('Authorization')
-    
-    # Validation
-    required_fields = ['tenant_id', 'room_id', 'start_date', 'end_date', 'monthly_rent', 'deposit']
-    for field in required_fields:
-        if field not in data:
-            return jsonify({'message': f'Thiếu trường {field}!'}), 400
-    
-    # Kiểm tra tenant tồn tại
-    tenant = tenants_collection.find_one({'_id': data['tenant_id']})
-    if not tenant:
-        return jsonify({'message': 'Người thuê không tồn tại!'}), 404
-    
-    # Kiểm tra phòng có available không
-    room, error = check_room_availability(data['room_id'], token)
-    if error:
-        return jsonify({'message': error}), 400
-    
-    if room['status'] != 'available':
-        return jsonify({'message': 'Phòng không còn trống!'}), 400
-    
-    # Kiểm tra ngày hợp lệ
-    try:
-        start_date = datetime.datetime.fromisoformat(data['start_date'])
-        end_date = datetime.datetime.fromisoformat(data['end_date'])
-        
-        if end_date <= start_date:
-            return jsonify({'message': 'Ngày kết thúc phải sau ngày bắt đầu!'}), 400
-    except:
-        return jsonify({'message': 'Định dạng ngày không hợp lệ!'}), 400
-    
-    # Tạo contract_id tự động
-    contract_count = contracts_collection.count_documents({})
-    contract_id = f"C{contract_count + 1:04d}"
-    
-    new_contract = {
-        '_id': contract_id,
-        'tenant_id': data['tenant_id'],
-        'room_id': data['room_id'],
-        'start_date': data['start_date'],
-        'end_date': data['end_date'],
-        'monthly_rent': float(data['monthly_rent']),
-        'deposit': float(data['deposit']),
-        'electric_price': float(data.get('electric_price', 3500)),
-        'water_price': float(data.get('water_price', 20000)),
-        'status': 'active',  # active | expired | terminated
-        'payment_day': int(data.get('payment_day', 5)),  # Ngày thanh toán hàng tháng
-        'notes': data.get('notes', ''),
-        'created_at': datetime.datetime.utcnow().isoformat(),
-        'updated_at': datetime.datetime.utcnow().isoformat()
-    }
-    
-    try:
-        # Tạo hợp đồng
-        contracts_collection.insert_one(new_contract)
-        
-        # Cập nhật trạng thái phòng
-        update_success = update_room_status(
-            data['room_id'], 
-            'occupied', 
-            data['tenant_id'],
-            token
-        )
-        
-        if not update_success:
-            # Rollback nếu cập nhật phòng thất bại
-            contracts_collection.delete_one({'_id': contract_id})
-            return jsonify({'message': 'Không thể cập nhật trạng thái phòng!'}), 500
-        
-        new_contract['id'] = new_contract['_id']
-        return jsonify({
-            'message': 'Tạo hợp đồng thành công!',
-            'contract': new_contract
-        }), 201
-        
-    except Exception as e:
-        return jsonify({'message': f'Lỗi tạo hợp đồng: {str(e)}'}), 500
-
-# API Kết thúc hợp đồng
-@app.route('/api/contracts/<contract_id>/terminate', methods=['PUT'])
-@token_required
-@admin_required
-def terminate_contract(current_user, contract_id):
-    token = request.headers.get('Authorization')
-    
-    contract = contracts_collection.find_one({'_id': contract_id})
-    if not contract:
-        return jsonify({'message': 'Hợp đồng không tồn tại!'}), 404
-    
-    if contract['status'] != 'active':
-        return jsonify({'message': 'Hợp đồng đã kết thúc!'}), 400
-    
-    try:
-        # Cập nhật trạng thái hợp đồng
-        contracts_collection.update_one(
-            {'_id': contract_id},
+        # Đánh dấu inactive thay vì xóa (để giữ lại user account)
+        tenants_collection.update_one(
+            {'_id': tenant_id},
             {
                 '$set': {
-                    'status': 'terminated',
-                    'end_date': datetime.datetime.utcnow().isoformat(),
+                    'status': 'inactive',
                     'updated_at': datetime.datetime.utcnow().isoformat()
                 }
             }
         )
-        
-        # Cập nhật trạng thái phòng về available
-        update_room_status(contract['room_id'], 'available', None, token)
-        
-        return jsonify({'message': 'Kết thúc hợp đồng thành công!'}), 200
-        
+        return jsonify({'message': 'Vô hiệu hóa người thuê thành công!'}), 200
     except Exception as e:
-        return jsonify({'message': f'Lỗi kết thúc hợp đồng: {str(e)}'}), 500
-
-# API Gia hạn hợp đồng
-@app.route('/api/contracts/<contract_id>/extend', methods=['PUT'])
-@token_required
-@admin_required
-def extend_contract(current_user, contract_id):
-    data = request.get_json()
-    
-    if 'new_end_date' not in data:
-        return jsonify({'message': 'Thiếu ngày kết thúc mới!'}), 400
-    
-    contract = contracts_collection.find_one({'_id': contract_id})
-    if not contract:
-        return jsonify({'message': 'Hợp đồng không tồn tại!'}), 404
-    
-    if contract['status'] != 'active':
-        return jsonify({'message': 'Chỉ có thể gia hạn hợp đồng đang hoạt động!'}), 400
-    
-    try:
-        new_end_date = datetime.datetime.fromisoformat(data['new_end_date'])
-        old_end_date = datetime.datetime.fromisoformat(contract['end_date'])
-        
-        if new_end_date <= old_end_date:
-            return jsonify({'message': 'Ngày kết thúc mới phải sau ngày kết thúc hiện tại!'}), 400
-        
-        contracts_collection.update_one(
-            {'_id': contract_id},
-            {
-                '$set': {
-                    'end_date': data['new_end_date'],
-                    'updated_at': datetime.datetime.utcnow().isoformat()
-                }
-            }
-        )
-        
-        return jsonify({'message': 'Gia hạn hợp đồng thành công!'}), 200
-        
-    except:
-        return jsonify({'message': 'Định dạng ngày không hợp lệ!'}), 400
-
-# API Lấy hợp đồng theo phòng
-@app.route('/api/contracts/room/<room_id>', methods=['GET'])
-@token_required
-def get_contracts_by_room(current_user, room_id):
-    contracts = list(contracts_collection.find({'room_id': room_id}).sort('created_at', -1))
-    
-    for contract in contracts:
-        contract['id'] = contract['_id']
-        tenant = tenants_collection.find_one({'_id': contract['tenant_id']})
-        if tenant:
-            contract['tenant_name'] = tenant['name']
-            contract['tenant_phone'] = tenant['phone']
-    
-    return jsonify({'contracts': contracts, 'total': len(contracts)}), 200
+        return jsonify({'message': f'Lỗi vô hiệu hóa người thuê: {str(e)}'}), 500
 
 if __name__ == '__main__':
     register_service()

@@ -70,7 +70,7 @@ services:
     ports:
       - "5003:5003"
     environment:
-      - MONGO_URI=mongodb://mongodb:27017/tenants_db
+      - MONGO_URI=mongodb://mongodb:27017/users_db
       - JWT_SECRET=your-super-secret-key-change-this
       - CONSUL_HOST=consul
       - CONSUL_PORT=8500
@@ -99,6 +99,46 @@ services:
       - consul
     networks:
       - motel-network
+    restart:
+      unless-stopped
+
+      # Booking Service
+  booking-service:
+    build: ./services/booking-service
+    container_name: booking-service
+    ports:
+      - "5005:5005"
+    environment:
+      - MONGO_URI=mongodb://mongodb:27017/users_db
+      - JWT_SECRET=your-super-secret-key-change-this
+      - CONSUL_HOST=consul
+      - CONSUL_PORT=8500
+      - SERVICE_PORT=5005
+    depends_on:
+      - mongodb
+      - consul
+    networks:
+      - motel-network
+    restart:
+      unless-stopped
+
+      # Contact Service
+  contract-service:
+    build: ./services/contract-service
+    container_name: contract-service
+    ports:
+      - "5006:5006"
+    environment:
+      - MONGO_URI=mongodb://mongodb:27017/users_db
+      - JWT_SECRET=your-super-secret-key-change-this
+      - CONSUL_HOST=consul
+      - CONSUL_PORT=8500
+      - SERVICE_PORT=5006
+    depends_on:
+      - mongodb
+      - consul
+    networks:
+      - motel-network
     restart: unless-stopped
 
   # Frontend Service
@@ -114,6 +154,8 @@ services:
       - room-service
       - tenant-service
       - report-service
+      - booking-service
+      - contract-service
     networks:
       - motel-network
     restart: unless-stopped
@@ -133,6 +175,8 @@ services:
       - room-service
       - tenant-service
       - report-service
+      - booking-service
+      - contract-service
       - frontend
     networks:
       - motel-network

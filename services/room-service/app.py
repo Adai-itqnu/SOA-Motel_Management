@@ -90,6 +90,15 @@ def get_room(room_id):
         return jsonify({'message': 'Phòng không tồn tại!'}), 404
     
     room['id'] = room['_id']
+    # Đảm bảo có các trường mới (backward compatibility)
+    if 'deposit' not in room:
+        room['deposit'] = 0
+    if 'payment_day' not in room:
+        room['payment_day'] = 5
+    if 'electric_price' not in room:
+        room['electric_price'] = 3500
+    if 'water_price' not in room:
+        room['water_price'] = 20000
     return jsonify(room), 200
 
 # API Tạo phòng mới (Admin only)
@@ -109,9 +118,27 @@ def create_room(current_user):
     if rooms_collection.find_one({'name': data['name']}):
         return jsonify({'message': 'Tên phòng đã tồn tại!'}), 400
     
-    # Tạo room_id tự động
-    room_count = rooms_collection.count_documents({})
-    room_id = f"R{room_count + 1:03d}"
+    # Tạo room_id tự động - tìm số lớn nhất và tăng lên 1
+    # Lấy tất cả room_id hiện có và tìm số lớn nhất
+    existing_rooms = rooms_collection.find({}, {'_id': 1})
+    max_num = 0
+    for room in existing_rooms:
+        room_id_str = str(room.get('_id', ''))
+        if room_id_str.startswith('R') and len(room_id_str) > 1:
+            try:
+                num = int(room_id_str[1:])
+                if num > max_num:
+                    max_num = num
+            except ValueError:
+                continue
+    
+    # Tạo room_id mới
+    room_id = f"R{max_num + 1:03d}"
+    
+    # Đảm bảo room_id không trùng (trong trường hợp hiếm)
+    while rooms_collection.find_one({'_id': room_id}):
+        max_num += 1
+        room_id = f"R{max_num + 1:03d}"
     
     # Tạo phòng mới
     new_room = {
@@ -124,6 +151,10 @@ def create_room(current_user):
         'water_meter': data.get('water_meter', 0),
         'room_type': data['room_type'],
         'description': data.get('description', ''),
+        'deposit': float(data.get('deposit', 0)),  # Tiền cọc
+        'payment_day': int(data.get('payment_day', 5)),  # Ngày thanh toán hàng tháng
+        'electric_price': float(data.get('electric_price', 3500)),  # Giá điện
+        'water_price': float(data.get('water_price', 20000)),  # Giá nước
         'created_at': datetime.datetime.utcnow().isoformat(),
         'updated_at': datetime.datetime.utcnow().isoformat()
     }
@@ -157,11 +188,17 @@ def update_room(current_user, room_id):
     # Cập nhật các trường
     update_fields = {}
     allowed_fields = ['name', 'price', 'status', 'electric_meter', 'water_meter', 
-                     'room_type', 'description', 'tenant_id']
+                     'room_type', 'description', 'tenant_id', 'deposit', 
+                     'payment_day', 'electric_price', 'water_price']
     
     for field in allowed_fields:
         if field in data:
-            update_fields[field] = data[field]
+            if field in ['deposit', 'electric_price', 'water_price']:
+                update_fields[field] = float(data[field])
+            elif field == 'payment_day':
+                update_fields[field] = int(data[field])
+            else:
+                update_fields[field] = data[field]
     
     update_fields['updated_at'] = datetime.datetime.utcnow().isoformat()
     
@@ -229,6 +266,15 @@ def get_available_rooms():
         room.pop('tenant_id', None)
         room.pop('electric_meter', None)
         room.pop('water_meter', None)
+        # Đảm bảo có các trường mới (backward compatibility)
+        if 'deposit' not in room:
+            room['deposit'] = 0
+        if 'payment_day' not in room:
+            room['payment_day'] = 5
+        if 'electric_price' not in room:
+            room['electric_price'] = 3500
+        if 'water_price' not in room:
+            room['water_price'] = 20000
     
     return jsonify({'rooms': rooms, 'total': len(rooms)}), 200
 
