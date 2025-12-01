@@ -1,3 +1,4 @@
+(function () {
 let allRooms = [];
 let currentEditId = null;
 
@@ -5,7 +6,7 @@ let currentEditId = null;
 async function loadRoomStats() {
   try {
     const headers = getAuthHeader();
-    const response = await fetch("/api/rooms/stats", {
+    const response = await fetch(buildApiUrl("/api/rooms/stats"), {
       headers,
     });
     if (response.status === 401) {
@@ -35,7 +36,7 @@ async function loadRoomStats() {
 window.loadRoomsData = async function loadRoomsData() {
   try {
     const headers = getAuthHeader();
-    const response = await fetch("/api/rooms", {
+    const response = await fetch(buildApiUrl("/api/rooms"), {
       headers,
     });
     if (response.status === 401) {
@@ -89,6 +90,7 @@ function renderRooms(rooms) {
       const statusText = {
         available: "Còn trống",
         occupied: "Đã cho thuê",
+        reserved: "Đang giữ chỗ",
         maintenance: "Bảo trì",
       }[room.status];
       return `
@@ -175,7 +177,7 @@ window.closeRoomModal = function closeRoomModal() {
 window.deleteRoom = async function deleteRoom(roomId) {
   if (!confirm("Bạn có chắc muốn xóa phòng này?")) return;
   try {
-    const response = await fetch(`/api/rooms/${roomId}`, {
+    const response = await fetch(buildApiUrl(`/api/rooms/${roomId}`), {
       method: "DELETE",
       headers: getAuthHeader(),
     });
@@ -224,8 +226,8 @@ document.addEventListener("DOMContentLoaded", function () {
       const modalAlert = document.getElementById("roomModalAlert");
       try {
         const url = currentEditId
-          ? `/api/rooms/${currentEditId}`
-          : "/api/rooms";
+          ? buildApiUrl(`/api/rooms/${currentEditId}`)
+          : buildApiUrl("/api/rooms");
         const method = currentEditId ? "PUT" : "POST";
         const response = await fetch(url, {
           method: method,
@@ -281,3 +283,4 @@ if (typeof window.scriptsLoaded === "undefined") {
 }
 window.scriptsLoaded.rooms = true;
 console.log("rooms.js loaded");
+})();

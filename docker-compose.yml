@@ -56,6 +56,7 @@ services:
       - CONSUL_HOST=consul
       - CONSUL_PORT=8500
       - SERVICE_PORT=5002
+      - INTERNAL_API_KEY=internal-api-key-change-me
     depends_on:
       - mongodb
       - consul
@@ -99,10 +100,9 @@ services:
       - consul
     networks:
       - motel-network
-    restart:
-      unless-stopped
+    restart: unless-stopped
 
-      # Booking Service
+  # Booking Service
   booking-service:
     build: ./services/booking-service
     container_name: booking-service
@@ -114,15 +114,15 @@ services:
       - CONSUL_HOST=consul
       - CONSUL_PORT=8500
       - SERVICE_PORT=5005
+      - INTERNAL_API_KEY=internal-api-key-change-me
     depends_on:
       - mongodb
       - consul
     networks:
       - motel-network
-    restart:
-      unless-stopped
+    restart: unless-stopped
 
-      # Contact Service
+  # Contract Service
   contract-service:
     build: ./services/contract-service
     container_name: contract-service
@@ -134,6 +134,71 @@ services:
       - CONSUL_HOST=consul
       - CONSUL_PORT=8500
       - SERVICE_PORT=5006
+    depends_on:
+      - mongodb
+      - consul
+    networks:
+      - motel-network
+    restart: unless-stopped
+
+  # Bill Service
+  bill-service:
+    build: ./services/bill-service
+    container_name: bill-service
+    ports:
+      - "5007:5007"
+    environment:
+      - MONGO_URI=mongodb://mongodb:27017/bills_db
+      - JWT_SECRET=your-super-secret-key-change-this
+      - CONSUL_HOST=consul
+      - CONSUL_PORT=8500
+      - SERVICE_PORT=5007
+      - INTERNAL_API_KEY=internal-api-key-change-me
+    depends_on:
+      - mongodb
+      - consul
+    networks:
+      - motel-network
+    restart: unless-stopped
+
+  # Payment Service
+  payment-service:
+    build: ./services/payment-service
+    container_name: payment-service
+    ports:
+      - "5008:5008"
+    environment:
+      - MONGO_URI=mongodb://mongodb:27017/payments_db
+      - JWT_SECRET=your-super-secret-key-change-this
+      - CONSUL_HOST=consul
+      - CONSUL_PORT=8500
+      - SERVICE_PORT=5008
+      - VNPAY_TMN_CODE=
+      - VNPAY_HASH_SECRET=
+      - VNPAY_URL=https://sandbox.vnpayment.vn/paymentv2/vpcpay.html
+      - VNPAY_RETURN_URL=http://localhost:5000/payment/vnpay/callback
+      - INTERNAL_API_KEY=internal-api-key-change-me
+    depends_on:
+      - mongodb
+      - consul
+      - bill-service
+    networks:
+      - motel-network
+    restart: unless-stopped
+
+  # Notification Service
+  notification-service:
+    build: ./services/notification-service
+    container_name: notification-service
+    ports:
+      - "5010:5010"
+    environment:
+      - MONGO_URI=mongodb://mongodb:27017/notifications_db
+      - JWT_SECRET=your-super-secret-key-change-this
+      - CONSUL_HOST=consul
+      - CONSUL_PORT=8500
+      - SERVICE_PORT=5010
+      - INTERNAL_API_KEY=internal-api-key-change-me
     depends_on:
       - mongodb
       - consul
@@ -156,6 +221,8 @@ services:
       - report-service
       - booking-service
       - contract-service
+      - bill-service
+      - payment-service
     networks:
       - motel-network
     restart: unless-stopped
@@ -177,6 +244,8 @@ services:
       - report-service
       - booking-service
       - contract-service
+      - bill-service
+      - payment-service
       - frontend
     networks:
       - motel-network

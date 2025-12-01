@@ -9,6 +9,10 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   </head>
   <body>
+    <script>
+      const API_GATEWAY = "{{ api_gateway }}";
+      window.API_GATEWAY = API_GATEWAY;
+    </script>
     <!-- Header -->
     <header class="header">
       <div class="header-brand">
@@ -51,6 +55,14 @@
             <a class="menu-item" data-section="bookings">
               <span class="menu-item-icon">📅</span>
               <span class="menu-item-text">Quản lý Booking</span>
+            </a>
+            <a class="menu-item" data-section="bills">
+              <span class="menu-item-icon">🧾</span>
+              <span class="menu-item-text">Quản lý Hóa đơn</span>
+            </a>
+            <a class="menu-item" data-section="payments">
+              <span class="menu-item-icon">💳</span>
+              <span class="menu-item-text">Quản lý Thanh toán</span>
             </a>
             <a class="menu-item" data-section="reports">
               <span class="menu-item-icon">📈</span>
@@ -179,6 +191,7 @@
                   <option value="">Tất cả trạng thái</option>
                   <option value="available">Còn trống</option>
                   <option value="occupied">Đã cho thuê</option>
+                  <option value="reserved">Đang giữ chỗ</option>
                   <option value="maintenance">Bảo trì</option>
                 </select>
               </div>
@@ -369,11 +382,136 @@
                     <th>Ngày kết thúc</th>
                     <th>Giá thuê/tháng</th>
                     <th>Tiền cọc</th>
+                    <th>Thanh toán</th>
                     <th>Trạng thái</th>
                     <th>Hành động</th>
                   </tr>
                 </thead>
                 <tbody id="bookingsTableBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- Bills Panel -->
+        <div id="billsPanel" class="content-panel">
+          <div
+            style="
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+              margin-bottom: 30px;
+            "
+          >
+            <div>
+              <div class="page-title">Quản lý Hóa đơn</div>
+            </div>
+            <button class="btn-primary" onclick="openCreateBillModal()">
+              + Tạo hóa đơn mới
+            </button>
+          </div>
+
+          <div class="content-section">
+            <div class="filters">
+              <div class="filter-item">
+                <input
+                  type="text"
+                  id="billSearchInput"
+                  placeholder="Tìm kiếm hóa đơn..."
+                />
+              </div>
+              <div class="filter-item">
+                <select id="billStatusFilter">
+                  <option value="">Tất cả trạng thái</option>
+                  <option value="paid">Đã thanh toán</option>
+                  <option value="unpaid">Chưa thanh toán</option>
+                </select>
+              </div>
+              <div class="filter-item">
+                <input
+                  type="month"
+                  id="billMonthFilter"
+                  placeholder="Chọn tháng"
+                />
+              </div>
+            </div>
+
+            <div class="table-container">
+              <table id="billsTable">
+                <thead>
+                  <tr>
+                    <th>Mã hóa đơn</th>
+                    <th>Người thuê</th>
+                    <th>Phòng</th>
+                    <th>Tháng</th>
+                    <th>Tổng tiền</th>
+                    <th>Trạng thái</th>
+                    <th>Hành động</th>
+                  </tr>
+                </thead>
+                <tbody id="billsTableBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- Payments Panel -->
+        <div id="paymentsPanel" class="content-panel">
+          <div
+            style="
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+              margin-bottom: 30px;
+            "
+          >
+            <div>
+              <div class="page-title">Quản lý Thanh toán</div>
+            </div>
+          </div>
+
+          <div class="content-section">
+            <div class="filters">
+              <div class="filter-item">
+                <input
+                  type="text"
+                  id="paymentSearchInput"
+                  placeholder="Tìm kiếm thanh toán..."
+                />
+              </div>
+              <div class="filter-item">
+                <select id="paymentStatusFilter">
+                  <option value="">Tất cả trạng thái</option>
+                  <option value="pending">Đang chờ</option>
+                  <option value="completed">Hoàn thành</option>
+                  <option value="failed">Thất bại</option>
+                </select>
+              </div>
+              <div class="filter-item">
+                <select id="paymentMethodFilter">
+                  <option value="">Tất cả phương thức</option>
+                  <option value="cash">Tiền mặt</option>
+                  <option value="bank_transfer">Chuyển khoản</option>
+                  <option value="vnpay">VNpay</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="table-container">
+              <table id="paymentsTable">
+                <thead>
+                  <tr>
+                    <th>Mã thanh toán</th>
+                    <th>Hóa đơn</th>
+                    <th>Người thuê</th>
+                    <th>Số tiền</th>
+                    <th>Phương thức</th>
+                    <th>Ngày thanh toán</th>
+                    <th>Trạng thái</th>
+                    <th>Hành động</th>
+                  </tr>
+                </thead>
+                <tbody id="paymentsTableBody"></tbody>
               </table>
             </div>
           </div>
@@ -647,6 +785,7 @@
             <select id="roomStatus">
               <option value="available">Còn trống</option>
               <option value="occupied">Đã cho thuê</option>
+                <option value="reserved">Đang giữ chỗ</option>
               <option value="maintenance">Bảo trì</option>
             </select>
           </div>
@@ -817,6 +956,77 @@
       </div>
     </div>
 
+    <!-- Bill Modal -->
+    <div id="billModal" class="modal">
+      <div class="modal-content">
+        <h2 class="modal-title" id="billModalTitle">Tạo hóa đơn mới</h2>
+        <div id="billModalAlert" class="alert"></div>
+        <form id="billForm">
+          <input type="hidden" id="billId" />
+          <div class="form-row">
+            <div class="form-group">
+              <label>Người thuê *</label>
+              <select id="billTenantId" required></select>
+            </div>
+            <div class="form-group">
+              <label>Phòng *</label>
+              <select id="billRoomId" required></select>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Tháng *</label>
+              <input type="month" id="billMonth" required />
+            </div>
+            <div class="form-group">
+              <label>Giá phòng (VNĐ) *</label>
+              <input type="number" id="billRoomPrice" required />
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Số điện đầu *</label>
+              <input type="number" id="billElectricStart" required />
+            </div>
+            <div class="form-group">
+              <label>Số điện cuối *</label>
+              <input type="number" id="billElectricEnd" required />
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Số nước đầu *</label>
+              <input type="number" id="billWaterStart" required />
+            </div>
+            <div class="form-group">
+              <label>Số nước cuối *</label>
+              <input type="number" id="billWaterEnd" required />
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Giá điện (VNĐ/kWh) *</label>
+              <input type="number" id="billElectricPrice" value="3500" required />
+            </div>
+            <div class="form-group">
+              <label>Giá nước (VNĐ/m³) *</label>
+              <input type="number" id="billWaterPrice" value="20000" required />
+            </div>
+          </div>
+          <div class="form-actions">
+            <button
+              type="button"
+              class="btn-secondary"
+              onclick="closeBillModal()"
+            >
+              Hủy
+            </button>
+            <button type="submit" class="btn-primary">Lưu</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
     <!-- Scripts -->
     <!-- Load admin.js FIRST (no defer) to expose getAuthHeader and utilities -->
     <script src="{{ url_for('static', filename='js/admin.js') }}"></script>
@@ -826,6 +1036,8 @@
     <script src="{{ url_for('static', filename='js/tenants.js') }}"></script>
     <script src="{{ url_for('static', filename='js/contracts.js') }}"></script>
     <script src="{{ url_for('static', filename='js/bookings.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/bills.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/payments.js') }}"></script>
     <script src="{{ url_for('static', filename='js/reports.js') }}"></script>
     <script>
       // Wait for all scripts then initialize
@@ -837,6 +1049,8 @@
             window.scriptsLoaded?.bookings &&
             window.scriptsLoaded?.rooms &&
             window.scriptsLoaded?.dashboard &&
+            window.scriptsLoaded?.bills &&
+            window.scriptsLoaded?.payments &&
             window.scriptsLoaded?.reports
           ) {
             console.log("All scripts ready, initializing admin...");

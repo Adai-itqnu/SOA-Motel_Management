@@ -1,3 +1,4 @@
+(function () {
 let allContracts = [];
 let currentEditContractId = null;
 
@@ -45,7 +46,7 @@ window.openCreateContractModal = async function openCreateContractModal() {
     // I will fetch it here to be safe and independent.
     
     try {
-        const response = await fetch("/api/tenants", { headers: getAuthHeader() });
+        const response = await fetch(buildApiUrl("/api/tenants"), { headers: getAuthHeader() });
         if (response.ok) {
             const data = await response.json();
             const tenants = data.tenants || [];
@@ -75,7 +76,7 @@ window.loadContractsData = async function loadContractsData() {
   console.log("loadContractsData called");
   try {
     const headers = getAuthHeader();
-    const response = await fetch("/api/contracts", { headers });
+    const response = await fetch(buildApiUrl("/api/contracts"), { headers });
     if (response.status === 401) {
       window.location.href = "/login";
       return;
@@ -91,7 +92,7 @@ window.loadContractsData = async function loadContractsData() {
 
 window.viewContract = async function viewContract(contractId) {
   try {
-    const response = await fetch(`/api/contracts/${contractId}`, {
+    const response = await fetch(buildApiUrl(`/api/contracts/${contractId}`), {
       headers: getAuthHeader(),
     });
     const data = await response.json();
@@ -113,7 +114,7 @@ window.viewContract = async function viewContract(contractId) {
 window.terminateContract = async function terminateContract(contractId) {
   if (!confirm("Bạn có chắc muốn chấm dứt hợp đồng này?")) return;
   try {
-    const response = await fetch(`/api/contracts/${contractId}/terminate`, {
+    const response = await fetch(buildApiUrl(`/api/contracts/${contractId}/terminate`), {
       method: "PUT",
       headers: getAuthHeader(),
     });
@@ -133,7 +134,7 @@ window.terminateContract = async function terminateContract(contractId) {
 // Helper to load rooms for the dropdown
 async function loadRoomsForContract() {
   try {
-    const response = await fetch("/api/rooms", {
+    const response = await fetch(buildApiUrl("/api/rooms"), {
       headers: getAuthHeader(),
     });
     if (!response.ok) throw new Error("Không thể tải danh sách phòng");
@@ -272,7 +273,7 @@ function initializeContractsHandlers() {
 
       const modalAlert = document.getElementById("contractModalAlert");
       try {
-        const response = await fetch("/api/contracts", {
+        const response = await fetch(buildApiUrl("/api/contracts"), {
           method: "POST",
           headers: {
             ...getAuthHeader(),
@@ -344,3 +345,4 @@ if (typeof window.scriptsLoaded === "undefined") {
 }
 window.scriptsLoaded.contracts = true;
 console.log("contracts.js loaded");
+})();

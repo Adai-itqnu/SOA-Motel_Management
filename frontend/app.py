@@ -41,6 +41,11 @@ def admin_dashboard():
     # Render trang trực tiếp, JavaScript sẽ kiểm tra localStorage
     return render_template('admin-dashboard.html', api_gateway=API_GATEWAY)
 
+# Trang kết quả thanh toán VNPAY
+@app.route('/payment-return')
+def payment_return():
+    return render_template('payment-return.html')
+
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)

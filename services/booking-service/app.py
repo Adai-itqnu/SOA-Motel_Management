@@ -5,7 +5,7 @@ import jwt
 from functools import wraps
 import requests
 from bson import ObjectId
-from config import JWT_SECRET, SERVICE_NAME, SERVICE_PORT, CONSUL_HOST, CONSUL_PORT
+from config import JWT_SECRET, SERVICE_NAME, SERVICE_PORT, CONSUL_HOST, CONSUL_PORT, INTERNAL_API_KEY
 from model import bookings_collection
 from service_registry import register_service
 
@@ -54,6 +54,15 @@ def admin_required(f):
         return f(current_user, *args, **kwargs)
     return decorated
 
+def internal_api_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        token = request.headers.get('X-Internal-Api-Key')
+        if not token or token != INTERNAL_API_KEY:
+            return jsonify({'message': 'Unauthorized internal request'}), 403
+        return f(*args, **kwargs)
+    return decorated
+
 # Helper function: Get service URL from Consul
 def get_service_url(service_name):
     try:
@@ -66,6 +75,56 @@ def get_service_url(service_name):
     except Exception as e:
         print(f"Error getting service URL: {e}")
         return None
+
+def update_room_status_internal(room_id, status, tenant_id=None):
+    """Call room-service internal endpoint to update room status."""
+    try:
+        room_service_url = get_service_url('room-service')
+        if not room_service_url:
+            print("Room service URL not found for status update")
+            return False
+        payload = {'status': status}
+        if tenant_id is not None:
+            payload['tenant_id'] = tenant_id
+        response = requests.put(
+            f"{room_service_url}/internal/rooms/{room_id}/status",
+            json=payload,
+            headers={'X-Internal-Api-Key': INTERNAL_API_KEY},
+            timeout=5
+        )
+        if not response.ok:
+            print(f"Failed to update room status: {response.text}")
+        return response.ok
+    except Exception as exc:
+        print(f"Error updating room status: {exc}")
+        return False
+
+def send_notification(user_id, title, message, notification_type, metadata=None):
+    """Send notification via notification-service."""
+    try:
+        notification_service_url = get_service_url('notification-service')
+        if not notification_service_url:
+            print("Notification service URL not available")
+            return False
+        payload = {
+            'user_id': str(user_id),
+            'title': title,
+            'message': message,
+            'type': notification_type,
+            'metadata': metadata or {}
+        }
+        response = requests.post(
+            f"{notification_service_url}/api/notifications",
+            json=payload,
+            headers={'X-Internal-Api-Key': INTERNAL_API_KEY, 'Content-Type': 'application/json'},
+            timeout=5
+        )
+        if not response.ok:
+            print(f"Failed to send notification: {response.text}")
+        return response.ok
+    except Exception as exc:
+        print(f"Error sending notification: {exc}")
+        return False
 
 # Helper function: Convert string to ObjectId
 def to_object_id(id_value):
@@ -213,6 +272,10 @@ def create_booking(current_user):
         except (ValueError, TypeError) as e:
             print(f"[DEBUG] Invalid number format: {e}")
             return jsonify({'message': f'Giá trị số không hợp lệ: {str(e)}'}), 400
+        
+        deposit_method = str(data.get('deposit_method', 'cash')).lower()
+        if deposit_method not in ['cash', 'vnpay']:
+            return jsonify({'message': 'Phương thức thanh toán cọc không hợp lệ!'}), 400
         
         # Kiểm tra phòng có available không
         try:
@@ -366,6 +429,11 @@ def create_booking(current_user):
             'payment_day': payment_day,
             'notes': data.get('notes', ''),
             'status': 'pending',  # pending | approved | rejected | cancelled
+            'deposit_method': deposit_method,
+            'deposit_status': 'pending_cash' if deposit_method == 'cash' else 'awaiting_payment',
+            'deposit_paid_at': None,
+            'room_hold_status': 'none',
+            'room_hold_since': None,
             'created_at': datetime.datetime.utcnow().isoformat(),
             'updated_at': datetime.datetime.utcnow().isoformat()
         }
@@ -374,6 +442,8 @@ def create_booking(current_user):
         bookings_collection.insert_one(new_booking)
         new_booking['id'] = new_booking['_id']
         success_message = 'Đặt phòng thành công! Vui lòng chờ admin duyệt.' + warning_message
+        if deposit_method == 'vnpay':
+            success_message += ' Vui lòng thanh toán tiền cọc ngay để giữ phòng.'
         print(f"[DEBUG] Booking created successfully: {booking_id}")
         return jsonify({
             'message': success_message,
@@ -385,6 +455,41 @@ def create_booking(current_user):
         print(f"[ERROR] {error_msg}")
         print(traceback.format_exc())
         return jsonify({'message': f'Lỗi tạo booking: {str(e)}'}), 500
+
+# Internal endpoint: update deposit status (called by payment-service)
+@app.route('/api/bookings/<booking_id>/deposit-status', methods=['PUT'])
+@internal_api_required
+def update_booking_deposit_status(booking_id):
+    booking = bookings_collection.find_one({'_id': booking_id})
+    if not booking:
+        return jsonify({'message': 'Booking không tồn tại!'}), 404
+    
+    data = request.get_json() or {}
+    new_status = data.get('status')
+    allowed_status = ['awaiting_payment', 'pending_cash', 'paid', 'failed', 'refunded']
+    if new_status not in allowed_status:
+        return jsonify({'message': 'Trạng thái cọc không hợp lệ!'}), 400
+    
+    update_fields = {
+        'deposit_status': new_status,
+        'updated_at': datetime.datetime.utcnow().isoformat()
+    }
+    
+    if 'transaction_id' in data:
+        update_fields['deposit_transaction_id'] = data['transaction_id']
+    
+    if new_status == 'paid':
+        update_fields['deposit_paid_at'] = datetime.datetime.utcnow().isoformat()
+        update_fields['room_hold_status'] = 'active'
+        update_fields['room_hold_since'] = datetime.datetime.utcnow().isoformat()
+        update_room_status_internal(booking['room_id'], 'reserved')
+    elif new_status in ['failed', 'refunded']:
+        update_fields['room_hold_status'] = 'released'
+        update_fields['room_hold_released_at'] = datetime.datetime.utcnow().isoformat()
+        update_room_status_internal(booking['room_id'], 'available')
+    
+    bookings_collection.update_one({'_id': booking_id}, {'$set': update_fields})
+    return jsonify({'message': 'Cập nhật trạng thái tiền cọc thành công!'}), 200
 
 # API Lấy danh sách bookings (admin xem tất cả, user xem của mình)
 @app.route('/api/bookings', methods=['GET'])
@@ -462,9 +567,7 @@ def get_bookings(current_user):
 @token_required
 @admin_required
 def approve_booking(current_user, booking_id):
-    """Admin duyệt booking và tạo contract"""
-    token = request.headers.get('Authorization') or request.headers.get('authorization')
-    
+    """Admin approves booking and requests first month rent payment"""
     booking = bookings_collection.find_one({'_id': booking_id})
     if not booking:
         return jsonify({'message': 'Booking không tồn tại!'}), 404
@@ -472,13 +575,71 @@ def approve_booking(current_user, booking_id):
     if booking['status'] != 'pending':
         return jsonify({'message': f'Booking đã được {booking["status"]}!'}), 400
     
-    # Kiểm tra phòng vẫn còn available
-    room, error = check_room_availability(booking['room_id'], token)
-    if error or not room or room.get('status') != 'available':
-        return jsonify({'message': 'Phòng không còn trống!'}), 400
+    try:
+        # Update booking status to approved
+        bookings_collection.update_one(
+            {'_id': booking_id},
+            {
+                '$set': {
+                    'status': 'approved',
+                    'approved_at': datetime.datetime.utcnow().isoformat(),
+                    'first_month_rent_status': 'unpaid',  # NEW: Track first month rent
+                    'updated_at': datetime.datetime.utcnow().isoformat()
+                }
+            }
+        )
+        
+        # Send notification requesting first month rent payment
+        monthly_rent = booking.get('monthly_rent', 0)
+        send_notification(
+            booking['tenant_id'],
+            "Đơn đặt phòng đã được duyệt",
+            f"Chúc mừng! Đơn đặt phòng của bạn đã được admin duyệt. Vui lòng thanh toán tiền phòng tháng đầu tiên ({monthly_rent:,} VNĐ) để hoàn tất đặt phòng và có thể nhận phòng.",
+            "booking_approved",
+            {
+                'booking_id': booking_id,
+                'monthly_rent': monthly_rent,
+                'action_required': 'pay_first_month'
+            }
+        )
+        
+        # Room stays 'reserved' until first month rent is paid
+        # DO NOT create contract yet - will be created after first month rent payment
+        
+        return jsonify({
+            'message': 'Duyệt booking thành công! Đã gửi thông báo yêu cầu thanh toán tháng đầu.',
+            'booking_id': booking_id,
+            'next_step': 'Chờ người dùng thanh toán tiền phòng tháng đầu'
+        }), 200
+        
+    except Exception as e:
+        import traceback
+        print(f"Error approving booking: {str(e)}")
+        traceback.print_exc()
+        return jsonify({'message': f'Lỗi duyệt booking: {str(e)}'}), 500
+
+# API Finalize booking after first month rent is paid (internal - called by payment service)
+@app.route('/api/bookings/<booking_id>/finalize', methods=['PUT'])
+def finalize_booking_internal(booking_id):
+    """Create contract and mark room as occupied after first month rent is paid"""
+    # Verify internal API key
+    api_key = request.headers.get('X-Internal-Api-Key')
+    if api_key != INTERNAL_API_KEY:
+        return jsonify({'message': 'Unauthorized'}), 401
+    
+    data = request.get_json() or {}
+    payment_id = data.get('payment_id')
+    transaction_id = data.get('transaction_id')
+    
+    booking = bookings_collection.find_one({'_id': booking_id})
+    if not booking:
+        return jsonify({'message': 'Booking không tồn tại!'}), 404
+    
+    if booking['status'] != 'approved':
+        return jsonify({'message': 'Booking chưa được duyệt!'}), 400
     
     try:
-        # Tạo contract data
+        # Create contract
         contract_data = {
             'tenant_id': str(booking['tenant_id']) if isinstance(booking['tenant_id'], ObjectId) else booking['tenant_id'],
             'room_id': booking['room_id'],
@@ -492,35 +653,59 @@ def approve_booking(current_user, booking_id):
             'notes': booking.get('notes', '')
         }
         
-        # Tạo contract qua contract-service
-        contract_result, error = create_contract_via_service(contract_data, token)
+        # Get admin token or create internal call
+        # For simplicity, we'll use internal API call without token
+        contract_result, error = create_contract_via_service(contract_data, None)
         if error:
-            return jsonify({'message': f'Lỗi tạo hợp đồng: {error}'}), 500
+            print(f"Error creating contract: {error}")
+            # Continue anyway, can retry contract creation later
+            contract_id = None
+        else:
+            contract_id = contract_result.get('contract', {}).get('id') or contract_result.get('contract', {}).get('_id')
         
-        contract_id = contract_result.get('contract', {}).get('id') or contract_result.get('contract', {}).get('_id')
-        
-        # Cập nhật booking status
+        # Update booking
         bookings_collection.update_one(
             {'_id': booking_id},
             {
                 '$set': {
-                    'status': 'approved',
+                    'first_month_rent_status': 'paid',
+                    'first_month_payment_id': payment_id,
                     'contract_id': contract_id,
+                    'status': 'move_in_ready',
+                    'ready_to_move_in_at': datetime.datetime.utcnow().isoformat(),
                     'updated_at': datetime.datetime.utcnow().isoformat()
                 }
             }
         )
         
+        # Mark room as occupied
+        update_room_status_internal(booking['room_id'], 'occupied', tenant_id=str(booking['tenant_id']))
+        
+        # Send confirmation notification
+        send_notification(
+            booking['tenant_id'],
+            "Thanh toán thành công - Sẵn sàng nhận phòng",
+            f"Bạn đã thanh toán tiền phòng tháng đầu thành công. Hợp đồng đã được tạo và bạn có thể nhận phòng. Chúc bạn có trải nghiệm tốt!",
+            "first_month_paid",
+            {
+                'booking_id': booking_id,
+                'contract_id': contract_id,
+                'transaction_id': transaction_id
+            }
+        )
+        
         return jsonify({
-            'message': 'Duyệt booking và tạo hợp đồng thành công!',
-            'contract': contract_result.get('contract', {})
+            'message': 'Finalize booking thành công!',
+            'contract_id': contract_id,
+            'booking_status': 'move_in_ready'
         }), 200
         
     except Exception as e:
         import traceback
-        print(f"Error approving booking: {str(e)}")
+        print(f"Error finalizing booking: {str(e)}")
         traceback.print_exc()
-        return jsonify({'message': f'Lỗi duyệt booking: {str(e)}'}), 500
+        return jsonify({'message': f'Lỗi finalize booking: {str(e)}'}), 500
+
 
 # API Từ chối booking (admin)
 @app.route('/api/bookings/<booking_id>/reject', methods=['PUT'])
@@ -544,9 +729,22 @@ def reject_booking(current_user, booking_id):
                 '$set': {
                     'status': 'rejected',
                     'rejection_reason': reason,
-                    'updated_at': datetime.datetime.utcnow().isoformat()
+                    'updated_at': datetime.datetime.utcnow().isoformat(),
+                    'room_hold_status': 'released' if booking.get('room_hold_status') == 'active' else booking.get('room_hold_status'),
+                    'room_hold_released_at': datetime.datetime.utcnow().isoformat() if booking.get('room_hold_status') == 'active' else booking.get('room_hold_released_at')
                 }
             }
+        )
+        
+        if booking.get('room_hold_status') == 'active':
+            update_room_status_internal(booking['room_id'], 'available')
+        
+        send_notification(
+            booking['tenant_id'],
+            "Đơn đặt phòng bị từ chối",
+            f"Yêu cầu đặt phòng {booking_id} đã bị từ chối. {('Lý do: ' + reason) if reason else ''}",
+            "booking_rejected",
+            {'booking_id': booking_id}
         )
         
         return jsonify({'message': 'Từ chối booking thành công!'}), 200
@@ -590,10 +788,15 @@ def cancel_booking(current_user, booking_id):
             {
                 '$set': {
                     'status': 'cancelled',
-                    'updated_at': datetime.datetime.utcnow().isoformat()
+                    'updated_at': datetime.datetime.utcnow().isoformat(),
+                    'room_hold_status': 'released' if booking.get('room_hold_status') == 'active' else booking.get('room_hold_status'),
+                    'room_hold_released_at': datetime.datetime.utcnow().isoformat() if booking.get('room_hold_status') == 'active' else booking.get('room_hold_released_at')
                 }
             }
         )
+        
+        if booking.get('room_hold_status') == 'active':
+            update_room_status_internal(booking['room_id'], 'available')
         
         return jsonify({'message': 'Hủy booking thành công!'}), 200
     except Exception as e:

@@ -1,3 +1,21 @@
+(function () {
+const API_BASE_URL = (window.API_GATEWAY || "").replace(/\/+$/, "");
+
+function buildApiUrl(path) {
+  if (!path.startsWith("/")) {
+    path = `/${path}`;
+  }
+  return API_BASE_URL ? `${API_BASE_URL}${path}` : path;
+}
+
+async function apiFetch(path, options = {}) {
+  const url = buildApiUrl(path);
+  return fetch(url, options);
+}
+
+window.buildApiUrl = buildApiUrl;
+window.apiFetch = apiFetch;
+
 // Authentication
 function checkAuth() {
   const token = localStorage.getItem("token");
@@ -225,3 +243,4 @@ window.initializeAdmin = function() {
     });
   });
 };
+})();

@@ -1,3 +1,4 @@
+(function () {
 // Load dashboard stats
 async function loadDashboardStats() {
   try {
@@ -5,10 +6,10 @@ async function loadDashboardStats() {
     console.log("Dashboard: Making API calls with headers:", headers);
 
     const [roomsRes, tenantsRes, contractsRes, reportsRes] = await Promise.all([
-      fetch("/api/rooms/stats", { headers }),
-      fetch("/api/tenants", { headers }),
-      fetch("/api/contracts?status=active", { headers }),
-      fetch("/api/reports/overview", { headers }),
+      fetch(buildApiUrl("/api/rooms/stats"), { headers }),
+      fetch(buildApiUrl("/api/tenants"), { headers }),
+      fetch(buildApiUrl("/api/contracts?status=active"), { headers }),
+      fetch(buildApiUrl("/api/reports/overview"), { headers }),
     ]);
 
     // Log response status
@@ -73,10 +74,10 @@ async function loadQuickStats() {
   try {
     const headers = getAuthHeader();
     const [roomsRes, tenantsRes, contractsRes, reportsRes] = await Promise.all([
-      fetch("/api/rooms/stats", { headers }),
-      fetch("/api/tenants", { headers }),
-      fetch("/api/contracts?status=active", { headers }),
-      fetch("/api/reports/overview", { headers }),
+      fetch(buildApiUrl("/api/rooms/stats"), { headers }),
+      fetch(buildApiUrl("/api/tenants"), { headers }),
+      fetch(buildApiUrl("/api/contracts?status=active"), { headers }),
+      fetch(buildApiUrl("/api/reports/overview"), { headers }),
     ]);
 
     const stats = [];
@@ -175,9 +176,13 @@ function renderQuickStats(stats) {
     )
     .join("");
 }
+// Expose public API
+window.loadDashboardStats = loadDashboardStats;
+
 // Notify that tenants.js is ready
 if (typeof window.scriptsLoaded === "undefined") {
   window.scriptsLoaded = {};
 }
 window.scriptsLoaded.dashboard = true;
 console.log("dashboard.js loaded");
+})();

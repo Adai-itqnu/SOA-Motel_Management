@@ -1,3 +1,4 @@
+(function () {
 let allTenants = [];
 let currentEditTenantId = null;
 
@@ -32,7 +33,7 @@ window.loadTenantsData = async function loadTenantsData() {
   console.log("loadTenantsData called from tenants.js");
   try {
     const headers = getAuthHeader();
-    const response = await fetch("/api/tenants", { headers });
+    const response = await fetch(buildApiUrl("/api/tenants"), { headers });
     if (response.status === 401) {
       window.location.href = "/login";
       return;
@@ -89,7 +90,7 @@ window.closeTenantModal = function closeTenantModal() {
 window.deleteTenant = async function deleteTenant(tenantId) {
   if (!confirm("Bạn có chắc muốn xóa người thuê này?")) return;
   try {
-    const response = await fetch(`/api/tenants/${tenantId}`, {
+    const response = await fetch(buildApiUrl(`/api/tenants/${tenantId}`), {
       method: "DELETE",
       headers: getAuthHeader(),
     });
@@ -104,7 +105,7 @@ window.deleteTenant = async function deleteTenant(tenantId) {
 
 window.viewTenant = async function viewTenant(tenantId) {
   try {
-    const response = await fetch(`/api/tenants/${tenantId}`, {
+    const response = await fetch(buildApiUrl(`/api/tenants/${tenantId}`), {
       headers: getAuthHeader(),
     });
     const data = await response.json();
@@ -218,10 +219,10 @@ function initializeTenantsHandlers() {
       const modalAlert = document.getElementById("tenantModalAlert");
       try {
         const url = currentEditTenantId
-          ? `/api/tenants/${currentEditTenantId}`
-          : "/api/tenants";
+          ? buildApiUrl(`/api/tenants/${currentEditTenantId}`)
+          : buildApiUrl("/api/tenants");
         const method = currentEditTenantId ? "PUT" : "POST";
-        const response = await fetch(url, {
+        const response = await fetch(buildApiUrl(url), {
           method: method,
           headers: {
             ...getAuthHeader(),
@@ -303,3 +304,4 @@ if (typeof window.scriptsLoaded === "undefined") {
 }
 window.scriptsLoaded.tenants = true;
 console.log("tenants.js loaded");
+})();

@@ -18,3 +18,6 @@ CONSUL_PORT = int(os.getenv('CONSUL_PORT', '8500'))
 DB_NAME = 'users_db'
 BOOKINGS_COLLECTION = 'bookings'
 
+# Internal API key for service-to-service communication
+INTERNAL_API_KEY = os.getenv('INTERNAL_API_KEY', 'internal-api-key-change-me')
+

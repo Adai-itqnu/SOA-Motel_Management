@@ -311,6 +311,11 @@ tr:hover {
   color: #f39c12;
 }
 
+.status-reserved {
+  background: #e0e7ff;
+  color: #3d5afe;
+}
+
 .status-maintenance {
   background: #fadbd8;
   color: #e74c3c;

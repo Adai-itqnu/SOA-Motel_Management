@@ -10,7 +10,6 @@
         padding: 0;
         box-sizing: border-box;
       }
-
       body {
         font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
         background: #f5f7fa;
@@ -444,6 +443,16 @@
              <div class="user-icon" style="width: 40px; height: 40px; background: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #667eea; font-weight: bold; font-size: 20px; cursor: pointer;" onclick="toggleUserMenu()">
                 <span id="userInitials">U</span>
              </div>
+             <div class="notification-icon" style="position: relative; cursor: pointer; margin-right: 10px;" onclick="toggleNotifications()">
+                <span style="font-size: 24px;">🔔</span>
+                <span id="notificationBadge" style="position: absolute; top: -5px; right: -5px; background: red; color: white; border-radius: 50%; padding: 2px 6px; font-size: 10px; display: none;">0</span>
+                <div id="notificationDropdown" style="display: none; position: absolute; top: 40px; right: 0; background: white; border-radius: 8px; box-shadow: 0 5px 15px rgba(0,0,0,0.2); width: 300px; max-height: 400px; overflow-y: auto; z-index: 101;">
+                    <div style="padding: 10px; border-bottom: 1px solid #eee; font-weight: bold;">Thông báo</div>
+                    <div id="notificationList" style="padding: 0;">
+                        <div style="padding: 15px; text-align: center; color: #666;">Không có thông báo mới</div>
+                    </div>
+                </div>
+             </div>
              <div class="user-info">
                 <div class="user-name" id="userName">User</div>
                 <div class="user-role">Người dùng</div>
@@ -452,6 +461,9 @@
           <div id="userDropdown" style="display: none; position: absolute; top: 60px; right: 20px; background: white; border-radius: 8px; box-shadow: 0 5px 15px rgba(0,0,0,0.2); padding: 10px; min-width: 200px; z-index: 100;">
              <div style="padding: 8px 12px; cursor: pointer; color: #333; border-bottom: 1px solid #eee;" onclick="openProfileModal()">👤 Thông tin cá nhân</div>
              <div style="padding: 8px 12px; cursor: pointer; color: #333; border-bottom: 1px solid #eee;" onclick="openMyBookingsModal()">📅 Yêu cầu đặt phòng</div>
+             <div style="padding: 8px 12px; cursor: pointer; color: #333; border-bottom: 1px solid #eee;" onclick="openMyBillsModal()">🧾 Hóa đơn của tôi</div>
+             <div style="padding: 8px 12px; cursor: pointer; color: #333; border-bottom: 1px solid #eee;" onclick="openPayDepositModal()">💳 Thanh toán hóa đơn</div>
+             <div style="padding: 8px 12px; cursor: pointer; color: #333; border-bottom: 1px solid #eee;" onclick="openPaymentHistoryModal()">📋 Lịch sử thanh toán</div>
              <div style="padding: 8px 12px; cursor: pointer; color: #c33;" onclick="logout()">🚪 Đăng xuất</div>
           </div>
         </div>
@@ -513,7 +525,7 @@
               <input type="date" id="bookingStartDate" required />
             </div>
             <div class="form-group">
-              <label>Ngày kết thúc *</label>
+              <label>Ngày kết thúc * (Tối thiểu 1 tháng)</label>
               <input type="date" id="bookingEndDate" required />
             </div>
           </div>
@@ -526,6 +538,27 @@
               <label>Tiền cọc (VNĐ)</label>
               <input type="number" id="bookingDeposit" readonly />
             </div>
+          </div>
+          <div class="form-group">
+            <label>Chọn phương thức thanh toán tiền cọc *</label>
+            <div style="display: flex; flex-direction: column; gap: 6px">
+              <label style="display: flex; align-items: center; gap: 8px">
+                <input
+                  type="radio"
+                  name="bookingDepositMethod"
+                  value="vnpay"
+                  checked
+                />
+                <span>Thanh toán qua VNPay</span>
+              </label>
+              <label style="display: flex; align-items: center; gap: 8px">
+                <input type="radio" name="bookingDepositMethod" value="cash" />
+                <span>Thanh toán tiền mặt khi gặp trực tiếp</span>
+              </label>
+            </div>
+            <small style="color: #777"
+              >Chỉ khi thanh toán VNPay/MoMo thành công phòng mới được giữ cho bạn.</small
+            >
           </div>
           <div class="form-row">
             <div class="form-group">
@@ -625,8 +658,95 @@
       </div>
     </div>
 
+    <!-- My Bills Modal -->
+    <div id="myBillsModal" class="modal">
+      <div class="modal-content" style="max-width: 900px;">
+        <div class="modal-header">
+          <h2 class="modal-title">Hóa đơn của tôi</h2>
+          <span class="close-modal" onclick="closeMyBillsModal()">&times;</span>
+        </div>
+        <div id="myBillsList">
+            <!-- Bills will be loaded here -->
+            <div class="loading">
+                <div class="spinner"></div>
+                <p>Đang tải...</p>
+            </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Pay Deposit Modal -->
+    <div id="payDepositModal" class="modal">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2 class="modal-title">Thanh toán tiền phòng</h2>
+          <span class="close-modal" onclick="closePayDepositModal()">&times;</span>
+        </div>
+        <div id="payDepositAlert" class="alert"></div>
+        <form id="payDepositForm">
+          <div class="form-group">
+            <label>Loại thanh toán *</label>
+            <select id="depositPaymentType" required>
+              <option value="">Chọn loại</option>
+              <option value="booking">Tiền cọc đặt phòng</option>
+              <option value="contract">Tiền cọc hợp đồng</option>
+            </select>
+          </div>
+          <div class="form-group" id="bookingIdGroup" style="display: none;">
+            <label>Chọn booking *</label>
+            <select id="depositBookingId"></select>
+          </div>
+          <div class="form-group" id="contractIdGroup" style="display: none;">
+            <label>Chọn hợp đồng *</label>
+            <select id="depositContractId"></select>
+          </div>
+          <div class="form-group">
+            <label>Số tiền (VNĐ) *</label>
+            <input type="number" id="depositAmount" required />
+          </div>
+          <div class="form-group">
+            <label>Phương thức thanh toán *</label>
+            <div style="display: flex; gap: 15px;">
+                <div style="margin-bottom: 8px">
+                    <input type="radio" name="depositMethod" value="vnpay" checked> VNPay
+                    <input type="radio" name="depositMethod" value="cash"> Tiền mặt
+                </div>
+            </div>
+          </div>
+          <div class="form-actions">
+            <button
+              type="button"
+              class="btn-secondary"
+              onclick="closePayDepositModal()"
+            >
+              Hủy
+            </button>
+            <button type="submit" class="btn-primary" id="payDepositBtn">Thanh toán</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Payment History Modal -->
+    <div id="paymentHistoryModal" class="modal">
+      <div class="modal-content" style="max-width: 900px;">
+        <div class="modal-header">
+          <h2 class="modal-title">Lịch sử thanh toán</h2>
+          <span class="close-modal" onclick="closePaymentHistoryModal()">&times;</span>
+        </div>
+        <div id="paymentHistoryList">
+            <!-- Payments will be loaded here -->
+            <div class="loading">
+                <div class="spinner"></div>
+                <p>Đang tải...</p>
+            </div>
+        </div>
+      </div>
+    </div>
+
     <script>
       const API_GATEWAY = "{{ api_gateway }}";
+      window.API_GATEWAY = API_GATEWAY; // Make it available globally
       let allRooms = [];
 
       // Check authentication
@@ -691,13 +811,72 @@
         if (event.target == document.getElementById("profileModal")) {
             closeProfileModal();
         }
-        if (event.target == document.getElementById("myBookingsModal")) {
-            closeMyBookingsModal();
-        }
         if (event.target == document.getElementById("bookingModal")) {
             closeBookingModal();
         }
+        if (!event.target.closest('.notification-icon')) {
+            document.getElementById("notificationDropdown").style.display = "none";
+        }
       }
+
+      // Notification Logic
+      function toggleNotifications() {
+        const dropdown = document.getElementById("notificationDropdown");
+        dropdown.style.display = dropdown.style.display === "none" ? "block" : "none";
+        if (dropdown.style.display === "block") {
+            loadNotifications();
+        }
+      }
+
+      async function loadNotifications() {
+        const token = localStorage.getItem("token");
+        if (!token) return;
+
+        try {
+            const response = await fetch(`${API_GATEWAY}/api/notifications`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            
+            if (response.ok) {
+                const data = await response.json();
+                renderNotifications(data.notifications || []);
+                updateNotificationBadge(data.notifications || []);
+            }
+        } catch (error) {
+            console.error("Error loading notifications:", error);
+        }
+      }
+
+      function renderNotifications(notifications) {
+        const list = document.getElementById("notificationList");
+        if (notifications.length === 0) {
+            list.innerHTML = '<div style="padding: 15px; text-align: center; color: #666;">Không có thông báo mới</div>';
+            return;
+        }
+
+        list.innerHTML = notifications.map(notif => `
+            <div style="padding: 10px; border-bottom: 1px solid #eee; ${notif.read ? '' : 'background: #f0f7ff;'}">
+                <div style="font-weight: bold; font-size: 14px; margin-bottom: 3px;">${notif.title}</div>
+                <div style="font-size: 13px; color: #555;">${notif.message}</div>
+                <div style="font-size: 11px; color: #999; margin-top: 5px;">${new Date(notif.created_at).toLocaleString('vi-VN')}</div>
+            </div>
+        `).join('');
+      }
+
+      function updateNotificationBadge(notifications) {
+        const unreadCount = notifications.filter(n => !n.read).length;
+        const badge = document.getElementById("notificationBadge");
+        if (unreadCount > 0) {
+            badge.textContent = unreadCount;
+            badge.style.display = "block";
+        } else {
+            badge.style.display = "none";
+        }
+      }
+
+      // Auto load notifications
+      setInterval(loadNotifications, 60000); // Check every minute
+      loadNotifications(); // Initial load
 
       // Profile Functions
       function openProfileModal() {
@@ -903,9 +1082,9 @@
         if (rooms.length === 0) {
           grid.innerHTML = `
                     <div class="no-rooms">
-                        <div class="no-rooms-icon">🏠</div>
-                        <h3>Không tìm thấy phòng trống</h3>
-                        <p>Hiện tại không có phòng nào phù hợp với tiêu chí của bạn</p>
+                        <span class="menu-item-icon">💳</span>
+                <span class="menu-item-text">Thanh toán tiền phòng</span>
+              </a>          <p>Hiện tại không có phòng nào phù hợp với tiêu chí của bạn</p>
                     </div>
                 `;
           return;
@@ -1146,6 +1325,24 @@
           const roomId = document.getElementById("bookingRoomId").value;
           const startDate = document.getElementById("bookingStartDate").value;
           const endDate = document.getElementById("bookingEndDate").value;
+          
+          // Validate minimum 1 month duration
+          if (startDate && endDate) {
+            const start = new Date(startDate);
+            const end = new Date(endDate);
+            const minEnd = new Date(start);
+            minEnd.setMonth(minEnd.getMonth() + 1); // Add 1 month
+            
+            if (end < minEnd) {
+              if (alert) {
+                alert.className = "alert alert-error";
+                alert.textContent = "Thời gian thuê tối thiểu là 1 tháng! Vui lòng chọn ngày kết thúc ít nhất 1 tháng sau ngày bắt đầu.";
+                alert.style.display = "block";
+              }
+              return;
+            }
+          }
+          
           const monthlyRentInput =
             document.getElementById("bookingMonthlyRent");
           const depositInput = document.getElementById("bookingDeposit");
@@ -1155,6 +1352,9 @@
           const waterPriceInput = document.getElementById("bookingWaterPrice");
           const paymentDayInput = document.getElementById("bookingPaymentDay");
           const notesInput = document.getElementById("bookingNotes");
+          const depositMethodInput = document.querySelector(
+            'input[name="bookingDepositMethod"]:checked'
+          );
           const alert = document.getElementById("bookingAlert");
 
           // Parse các giá trị số, đảm bảo không lỗi
@@ -1164,6 +1364,7 @@
           const waterPrice = parseFloat(waterPriceInput?.value || 20000);
           const paymentDay = parseInt(paymentDayInput?.value || 5);
           const notes = notesInput?.value || "";
+          const depositMethod = depositMethodInput?.value || "vnpay";
 
           // Validation
           if (!roomId) {
@@ -1241,7 +1442,8 @@
                 electric_price: parseFloat(electricPrice),
                 water_price: parseFloat(waterPrice),
                 payment_day: parseInt(paymentDay),
-                notes: notes,
+            notes: notes,
+            deposit_method: depositMethod,
               }),
             });
 
@@ -1252,6 +1454,44 @@
               const errorMsg = data.message || data.error || "Có lỗi xảy ra khi đặt phòng";
               console.error("Booking error:", errorMsg);
               throw new Error(errorMsg);
+            }
+
+            const bookingId = data.booking?.id || data.booking?._id;
+            const depositAmount =
+              parseFloat(data.booking?.deposit ?? deposit ?? 0) || 0;
+              const shouldAutoPayDeposit =
+                bookingId &&
+                depositAmount > 0 &&
+                depositMethod === "vnpay" &&
+                typeof window.payDepositForBooking === "function";
+
+            if (shouldAutoPayDeposit) {
+              if (alert) {
+                alert.className = "alert alert-success";
+                alert.textContent =
+                  (data.message ||
+                    "Đặt phòng thành công! Vui lòng chờ admin duyệt.") +
+                  " Đang chuyển tới VNPay để thanh toán tiền cọc...";
+                alert.style.display = "block";
+              }
+
+              try {
+                await window.payDepositForBooking({
+                  bookingId,
+                  amount: depositAmount,
+                  method: depositMethod
+                });
+                return;
+              } catch (paymentError) {
+                console.error("Deposit payment error:", paymentError);
+                if (alert) {
+                  alert.className = "alert alert-error";
+                  alert.textContent =
+                    paymentError.message ||
+                    "Không thể khởi tạo thanh toán tiền cọc. Bạn có thể thử lại trong mục Thanh toán.";
+                  alert.style.display = "block";
+                }
+              }
             }
 
             if (alert) {
@@ -1288,5 +1528,7 @@
       checkAuth();
       loadRooms();
     </script>
+    <script src="/static/js/user-bills.js"></script>
+    <script src="/static/js/user-payments.js"></script>
   </body>
 </html>

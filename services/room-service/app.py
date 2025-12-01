@@ -3,12 +3,15 @@ from flask_cors import CORS
 import datetime
 import jwt
 from functools import wraps
-from config import JWT_SECRET, SERVICE_NAME, SERVICE_PORT
+from config import JWT_SECRET, SERVICE_NAME, SERVICE_PORT, INTERNAL_API_KEY
 from model import rooms_collection
 from service_registry import register_service
 
 app = Flask(__name__)
 CORS(app)
+
+# Allowed statuses (including reserved hold state)
+ALLOWED_ROOM_STATUSES = {'available', 'occupied', 'maintenance', 'reserved'}
 
 # Load configuration
 app.config['SECRET_KEY'] = JWT_SECRET
@@ -50,6 +53,15 @@ def admin_required(f):
         if current_user.get('role') != 'admin':
             return jsonify({'message': 'Yêu cầu quyền admin!'}), 403
         return f(current_user, *args, **kwargs)
+    return decorated
+
+def internal_api_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        token = request.headers.get('X-Internal-Api-Key')
+        if not token or token != INTERNAL_API_KEY:
+            return jsonify({'message': 'Unauthorized internal request'}), 403
+        return f(*args, **kwargs)
     return decorated
 
 # Health check endpoint
@@ -145,7 +157,7 @@ def create_room(current_user):
         '_id': room_id,
         'name': data['name'],
         'price': float(data['price']),
-        'status': 'available',  # available | occupied | maintenance
+        'status': 'available',  # available | occupied | maintenance | reserved
         'tenant_id': None,
         'electric_meter': data.get('electric_meter', 0),
         'water_meter': data.get('water_meter', 0),
@@ -246,12 +258,14 @@ def get_room_stats(current_user):
     available_rooms = rooms_collection.count_documents({'status': 'available'})
     occupied_rooms = rooms_collection.count_documents({'status': 'occupied'})
     maintenance_rooms = rooms_collection.count_documents({'status': 'maintenance'})
+    reserved_rooms = rooms_collection.count_documents({'status': 'reserved'})
     
     return jsonify({
         'total': total_rooms,
         'available': available_rooms,
         'occupied': occupied_rooms,
         'maintenance': maintenance_rooms,
+        'reserved': reserved_rooms,
         'occupancy_rate': round((occupied_rooms / total_rooms * 100) if total_rooms > 0 else 0, 2)
     }), 200
 
@@ -277,6 +291,25 @@ def get_available_rooms():
             room['water_price'] = 20000
     
     return jsonify({'rooms': rooms, 'total': len(rooms)}), 200
+
+# Internal endpoint for other services to update room status (hold/release)
+@app.route('/internal/rooms/<room_id>/status', methods=['PUT'])
+@internal_api_required
+def internal_update_room_status(room_id):
+    data = request.get_json() or {}
+    new_status = data.get('status')
+    if new_status not in ALLOWED_ROOM_STATUSES:
+        return jsonify({'message': 'Trạng thái phòng không hợp lệ!'}), 400
+    
+    update_fields = {'status': new_status, 'updated_at': datetime.datetime.utcnow().isoformat()}
+    if 'tenant_id' in data:
+        update_fields['tenant_id'] = data['tenant_id']
+    
+    result = rooms_collection.update_one({'_id': room_id}, {'$set': update_fields})
+    if result.matched_count == 0:
+        return jsonify({'message': 'Phòng không tồn tại!'}), 404
+    
+    return jsonify({'message': 'Cập nhật trạng thái phòng thành công!', 'status': new_status}), 200
 
 if __name__ == '__main__':
     register_service()
