@@ -1,6 +1,7 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import datetime
+import uuid
 import jwt
 from functools import wraps
 import requests
@@ -123,9 +124,12 @@ def create_payment(current_user):
             'message': f'Số tiền thanh toán ({amount:,.0f}) vượt quá số tiền còn lại ({remaining_amount:,.0f})!'
         }), 400
     
-    # Tạo payment_id
-    payment_count = payments_collection.count_documents({})
-    payment_id = f"P{payment_count + 1:03d}"
+    # Tạo payment_id sử dụng UUID (thread-safe)
+    payment_id = f"P{uuid.uuid4().hex[:8].upper()}"
+    
+    # Đảm bảo không trùng (retry nếu cần)
+    while payments_collection.find_one({'_id': payment_id}):
+        payment_id = f"P{uuid.uuid4().hex[:8].upper()}"
     
     new_payment = {
         '_id': payment_id,
@@ -395,9 +399,12 @@ def create_deposit_payment(current_user):
     if not tenant_id:
         return jsonify({'message': 'Không tìm thấy tenant_id!'}), 400
     
-    # Tạo payment_id
-    payment_count = payments_collection.count_documents({})
-    payment_id = f"P{payment_count + 1:03d}"
+    # Tạo payment_id sử dụng UUID (thread-safe)
+    payment_id = f"P{uuid.uuid4().hex[:8].upper()}"
+    
+    # Đảm bảo không trùng (retry nếu cần)
+    while payments_collection.find_one({'_id': payment_id}):
+        payment_id = f"P{uuid.uuid4().hex[:8].upper()}"
     
     # Tạo payment record
     new_payment = {
@@ -427,6 +434,8 @@ def create_deposit_payment(current_user):
 
 
 if __name__ == '__main__':
+    import os
     register_service()
-    app.run(host='0.0.0.0', port=SERVICE_PORT, debug=True)
+    debug_mode = os.getenv('FLASK_DEBUG', 'false').lower() == 'true'
+    app.run(host='0.0.0.0', port=SERVICE_PORT, debug=debug_mode)
 

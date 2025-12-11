@@ -1,11 +1,12 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import datetime
+import uuid
 import jwt
 from functools import wraps
 import requests
 from bson import ObjectId
-from config import JWT_SECRET, SERVICE_NAME, SERVICE_PORT, CONSUL_HOST, CONSUL_PORT
+from config import JWT_SECRET, SERVICE_NAME, SERVICE_PORT, CONSUL_HOST, CONSUL_PORT, INTERNAL_API_KEY
 from model import contracts_collection
 from service_registry import register_service
 
@@ -52,6 +53,16 @@ def admin_required(f):
         if current_user.get('role') != 'admin':
             return jsonify({'message': 'Yêu cầu quyền admin!'}), 403
         return f(current_user, *args, **kwargs)
+    return decorated
+
+# Decorator for internal API calls
+def internal_api_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        token = request.headers.get('X-Internal-Api-Key')
+        if not token or token != INTERNAL_API_KEY:
+            return jsonify({'message': 'Unauthorized internal request'}), 403
+        return f(*args, **kwargs)
     return decorated
 
 # Helper function: Get service URL from Consul
@@ -334,26 +345,12 @@ def create_contract(current_user):
     except:
         return jsonify({'message': 'Định dạng ngày không hợp lệ!'}), 400
     
-    # Tạo contract_id tự động - tìm số lớn nhất và tăng lên 1
-    existing_contracts = contracts_collection.find({}, {'_id': 1})
-    max_num = 0
-    for contract in existing_contracts:
-        contract_id_str = str(contract.get('_id', ''))
-        if contract_id_str.startswith('C') and len(contract_id_str) > 1:
-            try:
-                num = int(contract_id_str[1:])
-                if num > max_num:
-                    max_num = num
-            except ValueError:
-                continue
+    # Tạo contract_id sử dụng UUID (thread-safe)
+    contract_id = f"C{uuid.uuid4().hex[:8].upper()}"
     
-    # Tạo contract_id mới
-    contract_id = f"C{max_num + 1:04d}"
-    
-    # Đảm bảo contract_id không trùng
+    # Đảm bảo contract_id không trùng (retry nếu cần)
     while contracts_collection.find_one({'_id': contract_id}):
-        max_num += 1
-        contract_id = f"C{max_num + 1:04d}"
+        contract_id = f"C{uuid.uuid4().hex[:8].upper()}"
     
     new_contract = {
         '_id': contract_id,
@@ -502,6 +499,8 @@ def get_contracts_by_room(current_user, room_id):
     return jsonify({'contracts': contracts, 'total': len(contracts)}), 200
 
 if __name__ == '__main__':
+    import os
     register_service()
-    app.run(host='0.0.0.0', port=SERVICE_PORT, debug=True)
+    debug_mode = os.getenv('FLASK_DEBUG', 'false').lower() == 'true'
+    app.run(host='0.0.0.0', port=SERVICE_PORT, debug=debug_mode)
 

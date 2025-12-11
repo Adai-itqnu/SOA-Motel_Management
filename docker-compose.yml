@@ -134,6 +134,7 @@ services:
       - CONSUL_HOST=consul
       - CONSUL_PORT=8500
       - SERVICE_PORT=5006
+      - INTERNAL_API_KEY=internal-api-key-change-me
     depends_on:
       - mongodb
       - consul
@@ -173,10 +174,10 @@ services:
       - CONSUL_HOST=consul
       - CONSUL_PORT=8500
       - SERVICE_PORT=5008
-      - VNPAY_TMN_CODE=
-      - VNPAY_HASH_SECRET=
+      - VNPAY_TMN_CODE=CGXZLS01
+      - VNPAY_HASH_SECRET=SCSECRET0000000000000000000CGXZLS01
       - VNPAY_URL=https://sandbox.vnpayment.vn/paymentv2/vpcpay.html
-      - VNPAY_RETURN_URL=http://localhost:5000/payment/vnpay/callback
+      - VNPAY_RETURN_URL=http://localhost/payment-return
       - INTERNAL_API_KEY=internal-api-key-change-me
     depends_on:
       - mongodb

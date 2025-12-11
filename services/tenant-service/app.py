@@ -374,5 +374,7 @@ def delete_tenant(current_user, tenant_id):
         return jsonify({'message': f'Lỗi vô hiệu hóa người thuê: {str(e)}'}), 500
 
 if __name__ == '__main__':
+    import os
     register_service()
-    app.run(host='0.0.0.0', port=SERVICE_PORT, debug=True)
+    debug_mode = os.getenv('FLASK_DEBUG', 'false').lower() == 'true'
+    app.run(host='0.0.0.0', port=SERVICE_PORT, debug=debug_mode)

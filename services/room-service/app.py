@@ -1,6 +1,7 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import datetime
+import uuid
 import jwt
 from functools import wraps
 from config import JWT_SECRET, SERVICE_NAME, SERVICE_PORT, INTERNAL_API_KEY
@@ -130,27 +131,12 @@ def create_room(current_user):
     if rooms_collection.find_one({'name': data['name']}):
         return jsonify({'message': 'Tên phòng đã tồn tại!'}), 400
     
-    # Tạo room_id tự động - tìm số lớn nhất và tăng lên 1
-    # Lấy tất cả room_id hiện có và tìm số lớn nhất
-    existing_rooms = rooms_collection.find({}, {'_id': 1})
-    max_num = 0
-    for room in existing_rooms:
-        room_id_str = str(room.get('_id', ''))
-        if room_id_str.startswith('R') and len(room_id_str) > 1:
-            try:
-                num = int(room_id_str[1:])
-                if num > max_num:
-                    max_num = num
-            except ValueError:
-                continue
+    # Tạo room_id sử dụng UUID (thread-safe)
+    room_id = f"R{uuid.uuid4().hex[:8].upper()}"
     
-    # Tạo room_id mới
-    room_id = f"R{max_num + 1:03d}"
-    
-    # Đảm bảo room_id không trùng (trong trường hợp hiếm)
+    # Đảm bảo room_id không trùng (retry nếu cần)
     while rooms_collection.find_one({'_id': room_id}):
-        max_num += 1
-        room_id = f"R{max_num + 1:03d}"
+        room_id = f"R{uuid.uuid4().hex[:8].upper()}"
     
     # Tạo phòng mới
     new_room = {
@@ -312,5 +298,7 @@ def internal_update_room_status(room_id):
     return jsonify({'message': 'Cập nhật trạng thái phòng thành công!', 'status': new_status}), 200
 
 if __name__ == '__main__':
+    import os
     register_service()
-    app.run(host='0.0.0.0', port=SERVICE_PORT, debug=True)
+    debug_mode = os.getenv('FLASK_DEBUG', 'false').lower() == 'true'
+    app.run(host='0.0.0.0', port=SERVICE_PORT, debug=debug_mode)

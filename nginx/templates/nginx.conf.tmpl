@@ -70,6 +70,14 @@ http {
         {{end}}
     }
 
+    # Upstream cho notification-service - lấy từ Consul
+    upstream notification_service {
+        least_conn;
+        {{range service "notification-service"}}
+        server {{.Address}}:{{.Port}};
+        {{end}}
+    }
+
     # Upstream cho frontend
     upstream frontend_service {
         server frontend:5000;
@@ -343,6 +351,40 @@ http {
             add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, DELETE, OPTIONS' always;
             add_header 'Access-Control-Allow-Headers' 'Authorization, Content-Type' always;
             return 503 '{"error": "Service unavailable", "message": "payment-service is not available. Please check Consul service registration."}';
+        }
+
+        # Notification Service API
+        location /api/notifications {
+            limit_req zone=api_limit burst=20 nodelay;
+            
+            proxy_intercept_errors on;
+            error_page 502 503 504 = @notification_error;
+            
+            proxy_pass http://notification_service;
+            proxy_http_version 1.1;
+            proxy_pass_request_headers on;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            # Forward Authorization header
+            proxy_set_header Authorization $http_authorization;
+            
+            add_header 'Access-Control-Allow-Origin' '*' always;
+            add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, DELETE, OPTIONS' always;
+            add_header 'Access-Control-Allow-Headers' 'Authorization, Content-Type' always;
+            
+            if ($request_method = 'OPTIONS') {
+                return 204;
+            }
+        }
+        
+        location @notification_error {
+            default_type application/json;
+            add_header 'Access-Control-Allow-Origin' '*' always;
+            add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, DELETE, OPTIONS' always;
+            add_header 'Access-Control-Allow-Headers' 'Authorization, Content-Type' always;
+            return 503 '{"error": "Service unavailable", "message": "notification-service is not available. Please check Consul service registration."}';
         }
 
         # Report API

@@ -1,6 +1,7 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import datetime
+import uuid
 import jwt
 from functools import wraps
 import requests
@@ -377,26 +378,12 @@ def create_booking(current_user):
         if missing_info:
             warning_message = f' (Lưu ý: Bạn chưa cập nhật {", ".join(missing_info)}. Admin có thể yêu cầu bổ sung khi duyệt booking)'
         
-        # Tạo booking_id tự động - tìm số lớn nhất và tăng lên 1
-        existing_bookings = bookings_collection.find({}, {'_id': 1})
-        max_num = 0
-        for booking in existing_bookings:
-            booking_id_str = str(booking.get('_id', ''))
-            if booking_id_str.startswith('BK') and len(booking_id_str) > 2:
-                try:
-                    num = int(booking_id_str[2:])
-                    if num > max_num:
-                        max_num = num
-                except ValueError:
-                    continue
+        # Tạo booking_id sử dụng UUID (thread-safe)
+        booking_id = f"BK{uuid.uuid4().hex[:8].upper()}"
         
-        # Tạo booking_id mới
-        booking_id = f"BK{max_num + 1:04d}"
-        
-        # Đảm bảo booking_id không trùng (trong trường hợp hiếm)
+        # Đảm bảo booking_id không trùng (retry nếu cần)
         while bookings_collection.find_one({'_id': booking_id}):
-            max_num += 1
-            booking_id = f"BK{max_num + 1:04d}"
+            booking_id = f"BK{uuid.uuid4().hex[:8].upper()}"
         
         # Xử lý dates - đảm bảo format đúng (dùng lại từ validation)
         start_date_str = data['start_date']
@@ -803,6 +790,8 @@ def cancel_booking(current_user, booking_id):
         return jsonify({'message': f'Lỗi hủy booking: {str(e)}'}), 500
 
 if __name__ == '__main__':
+    import os
     register_service()
-    app.run(host='0.0.0.0', port=SERVICE_PORT, debug=True)
+    debug_mode = os.getenv('FLASK_DEBUG', 'false').lower() == 'true'
+    app.run(host='0.0.0.0', port=SERVICE_PORT, debug=debug_mode)
 

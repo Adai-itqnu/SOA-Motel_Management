@@ -2,6 +2,7 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 import datetime
 import calendar
+import uuid
 import jwt
 from functools import wraps
 import requests
@@ -240,9 +241,12 @@ def create_bill(current_user):
     total_amount = room_price + electric_cost + water_cost
     due_date = compute_due_date(data['month'], payment_day)
     
-    # Tạo bill_id
-    bill_count = bills_collection.count_documents({})
-    bill_id = f"B{bill_count + 1:03d}"
+    # Tạo bill_id sử dụng UUID (thread-safe)
+    bill_id = f"B{uuid.uuid4().hex[:8].upper()}"
+    
+    # Đảm bảo không trùng (retry nếu cần)
+    while bills_collection.find_one({'_id': bill_id}):
+        bill_id = f"B{uuid.uuid4().hex[:8].upper()}"
     
     new_bill = {
         '_id': bill_id,
@@ -440,10 +444,10 @@ def delete_bill(current_user, bill_id):
     except Exception as e:
         return jsonify({'message': f'Lỗi xóa hóa đơn: {str(e)}'}), 500
 
-# API Cập nhật status hóa đơn (được payment-service gọi)
+# API Cập nhật status hóa đơn (được payment-service gọi - internal API)
 @app.route('/api/bills/<bill_id>/status', methods=['PUT'])
+@internal_api_required
 def update_bill_status(bill_id):
-    # Không cần token vì đây là internal API được payment-service gọi
     data = request.get_json()
     
     if 'status' not in data:
@@ -471,6 +475,8 @@ def update_bill_status(bill_id):
         return jsonify({'message': f'Lỗi cập nhật status: {str(e)}'}), 500
 
 if __name__ == '__main__':
+    import os
     register_service()
-    app.run(host='0.0.0.0', port=SERVICE_PORT, debug=True)
+    debug_mode = os.getenv('FLASK_DEBUG', 'false').lower() == 'true'
+    app.run(host='0.0.0.0', port=SERVICE_PORT, debug=debug_mode)
 

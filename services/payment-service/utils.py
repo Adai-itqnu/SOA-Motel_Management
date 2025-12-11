@@ -13,8 +13,8 @@ def get_service_url(service_name):
         # Fallback: use service name directly in Docker network
         service_ports = {
             'bill-service': 5007,
-            'booking-service': 5002,
-            'notification-service': 5008
+            'booking-service': 5005,
+            'notification-service': 5010
         }
         port = service_ports.get(service_name, 5001)
         return f"http://{service_name}:{port}"
@@ -23,8 +23,8 @@ def get_service_url(service_name):
         # Fallback: use service name directly in Docker network
         service_ports = {
             'bill-service': 5007,
-            'booking-service': 5002,
-            'notification-service': 5008
+            'booking-service': 5005,
+            'notification-service': 5010
         }
         port = service_ports.get(service_name, 5001)
         return f"http://{service_name}:{port}"
