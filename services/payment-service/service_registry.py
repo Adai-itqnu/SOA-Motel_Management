@@ -1,5 +1,4 @@
 import consul
-import socket
 import os
 from config import SERVICE_NAME, SERVICE_PORT, CONSUL_HOST, CONSUL_PORT
 
@@ -24,29 +23,30 @@ def register_service():
                 return
     
     try:
-        # Trong Docker network, sử dụng container name (hostname) để các service khác có thể kết nối
-        container_name = os.getenv('HOSTNAME', socket.gethostname())
-        
         c = consul.Consul(host=CONSUL_HOST, port=CONSUL_PORT)
-        
-        try:
-            container_ip = socket.gethostbyname(container_name)
-            if container_ip == "127.0.0.1":
-                service_address = container_name
-            else:
-                service_address = container_ip
-        except:
-            service_address = container_name
-        
+
+        service_address = os.getenv('SERVICE_ADDRESS') or SERVICE_NAME
+        service_id = os.getenv('SERVICE_ID') or f"{SERVICE_NAME}-{SERVICE_PORT}"
         health_url = f"http://{service_address}:{SERVICE_PORT}/health"
-        
+
+        try:
+            c.agent.service.deregister(service_id)
+        except Exception:
+            pass
+
         c.agent.service.register(
             SERVICE_NAME,
+            service_id=service_id,
             address=service_address,
             port=SERVICE_PORT,
-            check=consul.Check.http(health_url, interval="10s", timeout="5s")
+            check={
+                "HTTP": health_url,
+                "Interval": "10s",
+                "Timeout": "5s",
+                "DeregisterCriticalServiceAfter": "1m",
+            }
         )
-        
+
         print(f"[CONSUL] ✓ Registered {SERVICE_NAME} at {service_address}:{SERVICE_PORT}")
         print(f"[CONSUL]   Health check: {health_url}")
     except Exception as e:

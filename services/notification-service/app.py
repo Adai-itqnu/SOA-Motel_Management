@@ -1,192 +1,265 @@
+"""Notification Service - Main Application"""
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-from functools import wraps
 import datetime
-import uuid
-import requests
-import jwt
+import atexit
 
-from config import (
-    JWT_SECRET,
-    SERVICE_NAME,
-    SERVICE_PORT,
-    CONSUL_HOST,
-    CONSUL_PORT,
-    INTERNAL_API_KEY,
-)
+from config import Config
 from model import notifications_collection
-from service_registry import register_service
+from decorators import token_required, admin_required, internal_api_required
+from services import fetch_unpaid_bills
+from utils import (
+    get_timestamp, create_notification_document,
+    format_notification, get_user_id, check_duplicate_notification
+)
+from service_registry import register_service, deregister_service
+
 
 app = Flask(__name__)
+app.config.from_object(Config)
 CORS(app)
+atexit.register(deregister_service)
 
-# Authentication helpers
-def token_required(f):
-    @wraps(f)
-    def decorated(*args, **kwargs):
-        token = request.headers.get('Authorization') or request.headers.get('authorization')
-        if not token:
-            return jsonify({'message': 'Token không tồn tại!'}), 401
-        try:
-            if token.startswith('Bearer '):
-                token = token[7:]
-            elif token.startswith('bearer '):
-                token = token[7:]
-            data = jwt.decode(token, JWT_SECRET, algorithms=['HS256'])
-            current_user = data
-        except jwt.ExpiredSignatureError:
-            return jsonify({'message': 'Token đã hết hạn!'}), 401
-        except jwt.InvalidTokenError:
-            return jsonify({'message': 'Token không hợp lệ!'}), 401
-        return f(current_user, *args, **kwargs)
-    return decorated
 
-def internal_api_required(f):
-    @wraps(f)
-    def decorated(*args, **kwargs):
-        token = request.headers.get('X-Internal-Api-Key')
-        if not token or token != INTERNAL_API_KEY:
-            return jsonify({'message': 'Unauthorized internal request'}), 403
-        return f(*args, **kwargs)
-    return decorated
-
-# Consul helper
-def get_service_url(service_name):
-    try:
-        consul_url = f"http://{CONSUL_HOST}:{CONSUL_PORT}/v1/catalog/service/{service_name}"
-        response = requests.get(consul_url, timeout=5)
-        if response.ok and response.json():
-            service = response.json()[0]
-            return f"http://{service['ServiceAddress']}:{service['ServicePort']}"
-        service_ports = {
-            'bill-service': 5007,
-            'booking-service': 5005,
-            'notification-service': SERVICE_PORT
-        }
-        port = service_ports.get(service_name, 5000)
-        return f"http://{service_name}:{port}"
-    except Exception as exc:
-        print(f"Error resolving service URL for {service_name}: {exc}")
-        service_ports = {
-            'bill-service': 5007,
-            'booking-service': 5005,
-            'notification-service': SERVICE_PORT
-        }
-        port = service_ports.get(service_name, 5000)
-        return f"http://{service_name}:{port}"
-
-def create_notification_record(data):
-    notification = {
-        '_id': data.get('_id') or f"N{uuid.uuid4().hex[:10]}",
-        'user_id': str(data['user_id']),
-        'title': data['title'],
-        'message': data['message'],
-        'type': data.get('type', 'general'),
-        'status': 'unread',
-        'metadata': data.get('metadata', {}),
-        'created_at': datetime.datetime.utcnow().isoformat(),
-        'read_at': None
-    }
-    notifications_collection.insert_one(notification)
-    notification['id'] = notification['_id']
-    return notification
+# ============== Health Check ==============
 
 @app.route('/health', methods=['GET'])
-def health_check():
-    return jsonify({'status': 'healthy', 'service': SERVICE_NAME}), 200
+def health():
+    return jsonify({'status': 'healthy', 'service': Config.SERVICE_NAME}), 200
 
-# Internal endpoint: create notification
+
+# ============== Admin API: Send Notification ==============
+
+@app.route('/api/notifications/send', methods=['POST'])
+@token_required
+@admin_required
+def send_notification(current_user):
+    """Send notification to user(s) - Admin only"""
+    data = request.get_json() or {}
+    
+    # Validate required fields
+    if not data.get('title') or not data.get('message'):
+        return jsonify({'message': 'Thiếu tiêu đề hoặc nội dung!'}), 400
+    
+    broadcast = data.get('broadcast', False)
+    user_id = data.get('user_id')
+    
+    if not broadcast and not user_id:
+        return jsonify({'message': 'Thiếu user_id!'}), 400
+    
+    created = []
+    
+    if broadcast:
+        # Get all users from user-service (internal call)
+        import requests
+        try:
+            headers = {'X-Internal-Key': Config.INTERNAL_API_KEY}
+            resp = requests.get(f"{Config.USER_SERVICE_URL}/internal/users", headers=headers, timeout=5)
+            if resp.status_code == 200:
+                users = resp.json().get('users', [])
+                for user in users:
+                    notification = create_notification_document({
+                        'user_id': user.get('_id') or user.get('id'),
+                        'title': data['title'],
+                        'message': data['message'],
+                        'type': data.get('type', 'info'),
+                        'metadata': {'persistent': True, 'broadcast': True}
+                    })
+                    created.append(notification['_id'])
+            else:
+                return jsonify({'message': 'Không thể lấy danh sách người dùng!'}), 500
+        except Exception as e:
+            return jsonify({'message': f'Lỗi gửi thông báo: {str(e)}'}), 500
+    else:
+        notification = create_notification_document({
+            'user_id': user_id,
+            'title': data['title'],
+            'message': data['message'],
+            'type': data.get('type', 'info'),
+            'metadata': {'persistent': True, 'broadcast': False}
+        })
+        created.append(notification['_id'])
+    
+    return jsonify({
+        'message': f'Đã gửi {len(created)} thông báo!',
+        'created': created
+    }), 201
+
+
+# ============== Admin API: List All Notifications ==============
+
+@app.route('/api/notifications/admin', methods=['GET'])
+@token_required
+@admin_required
+def get_all_notifications(current_user):
+    """Get all notifications - Admin only"""
+    query = {}
+    
+    user_id = request.args.get('user_id')
+    if user_id:
+        query['user_id'] = user_id
+    
+    notif_type = request.args.get('type')
+    if notif_type:
+        query['type'] = notif_type
+    
+    limit = int(request.args.get('limit', 100))
+    
+    notifications = list(notifications_collection.find(query).sort('created_at', -1).limit(limit))
+    for n in notifications:
+        format_notification(n)
+    
+    return jsonify({
+        'notifications': notifications,
+        'total': len(notifications)
+    }), 200
+
+
+# ============== Internal API: Create Notification ==============
+
 @app.route('/api/notifications', methods=['POST'])
 @internal_api_required
-def create_notification_internal():
+def create_notification():
+    """Create notification (internal API)"""
     data = request.get_json() or {}
-    required_fields = ['user_id', 'title', 'message', 'type']
-    for field in required_fields:
-        if field not in data:
-            return jsonify({'message': f'Thiếu trường {field}!'}), 400
-    notification = create_notification_record(data)
-    return jsonify({'message': 'Tạo thông báo thành công!', 'notification': notification}), 201
+    
+    required = ['user_id', 'title', 'message', 'type']
+    missing = [f for f in required if f not in data]
+    if missing:
+        return jsonify({'message': f"Thiếu trường: {', '.join(missing)}"}), 400
+    
+    notification = create_notification_document(data)
+    return jsonify({
+        'message': 'Tạo thông báo thành công!',
+        'notification': notification
+    }), 201
 
-# User endpoint: list notifications
+
+# ============== Internal API: Welcome Notification ==============
+
+@app.route('/api/notifications/welcome', methods=['POST'])
+@internal_api_required
+def create_welcome_notification():
+    """Create welcome notification for new user"""
+    data = request.get_json() or {}
+    
+    user_id = data.get('user_id')
+    user_name = data.get('fullname') or data.get('user_name', 'bạn')
+    
+    if not user_id:
+        return jsonify({'message': 'Thiếu user_id!'}), 400
+    
+    notification = create_notification_document({
+        'user_id': user_id,
+        'title': 'Chào mừng đến với MotelHDK! 🎉',
+        'message': f'Xin chào {user_name}! Cảm ơn bạn đã đăng ký tài khoản. Hãy khám phá các phòng trọ phù hợp với nhu cầu của bạn.',
+        'type': 'welcome',
+        'metadata': {'persistent': True}
+    })
+    
+    return jsonify({
+        'message': 'Đã tạo thông báo chào mừng!',
+        'notification': notification
+    }), 201
+
+
+# ============== User APIs ==============
+
 @app.route('/api/notifications', methods=['GET'])
 @token_required
 def get_notifications(current_user):
-    user_id = current_user.get('user_id') or current_user.get('id')
+    """Get user's notifications"""
+    user_id = get_user_id(current_user)
     status_filter = request.args.get('status')
-    query = {'user_id': str(user_id)}
+    
+    query = {'user_id': user_id}
     if status_filter:
         query['status'] = status_filter
+    
     notifications = list(notifications_collection.find(query).sort('created_at', -1))
-    for noti in notifications:
-        noti['id'] = noti['_id']
-    return jsonify({'notifications': notifications, 'total': len(notifications)}), 200
+    for n in notifications:
+        format_notification(n)
+    
+    return jsonify({
+        'notifications': notifications,
+        'total': len(notifications)
+    }), 200
 
-# User endpoint: mark as read
+
 @app.route('/api/notifications/<notification_id>/read', methods=['PUT'])
 @token_required
-def mark_notification_read(current_user, notification_id):
-    user_id = current_user.get('user_id') or current_user.get('id')
+def mark_as_read(current_user, notification_id):
+    """Mark notification as read"""
+    user_id = get_user_id(current_user)
+    
     notification = notifications_collection.find_one({'_id': notification_id})
-    if not notification or notification.get('user_id') != str(user_id):
+    if not notification or notification.get('user_id') != user_id:
         return jsonify({'message': 'Thông báo không tồn tại!'}), 404
+    
     notifications_collection.update_one(
         {'_id': notification_id},
-        {'$set': {'status': 'read', 'read_at': datetime.datetime.utcnow().isoformat()}}
+        {'$set': {'status': 'read', 'read_at': get_timestamp()}}
     )
     return jsonify({'message': 'Đã đánh dấu đọc thông báo.'}), 200
 
-# Internal task: rent reminders
+
+@app.route('/api/notifications/read', methods=['PUT'])
+@token_required
+def mark_all_as_read(current_user):
+    """Mark all notifications as read"""
+    user_id = get_user_id(current_user)
+    
+    result = notifications_collection.update_many(
+        {'user_id': user_id, 'status': 'unread'},
+        {'$set': {'status': 'read', 'read_at': get_timestamp(), 'metadata.read': True}}
+    )
+    
+    return jsonify({
+        'message': f'Đã đánh dấu {result.modified_count} thông báo là đã đọc.'
+    }), 200
+
+
+# ============== Internal Task: Rent Reminders ==============
+
 @app.route('/api/notifications/tasks/rent-reminders', methods=['POST'])
 @internal_api_required
 def run_rent_reminders():
-    bill_service_url = get_service_url('bill-service')
-    try:
-        response = requests.get(
-            f"{bill_service_url}/internal/bills/unpaid",
-            headers={'X-Internal-Api-Key': INTERNAL_API_KEY},
-            timeout=10
-        )
-        if not response.ok:
-            return jsonify({'message': 'Không thể lấy danh sách hóa đơn!'}), 500
-        data = response.json()
-    except Exception as exc:
-        return jsonify({'message': f'Lỗi kết nối bill-service: {exc}'}), 500
-    
-    bills = data.get('bills', [])
+    """Generate rent reminder notifications"""
+    bills = fetch_unpaid_bills()
     today = datetime.date.today()
     created = []
+    
     for bill in bills:
         due_date_str = bill.get('due_date')
         if not due_date_str:
             continue
+        
         try:
             due_date = datetime.datetime.strptime(due_date_str, "%Y-%m-%d").date()
         except ValueError:
             continue
+        
         days_diff = (due_date - today).days
-        notif_type = None
-        message = ""
+        
+        # Determine notification type
         if days_diff == 0:
             notif_type = 'rent_due_today'
-            message = f"Hôm nay là hạn thanh toán hóa đơn {bill.get('_id')} với số tiền {bill.get('total_amount', 0):,.0f} VND."
+            message = f"Hôm nay là hạn thanh toán hóa đơn {bill.get('_id')} ({bill.get('total_amount', 0):,.0f} VND)."
         elif 1 <= days_diff <= 3:
             notif_type = 'rent_due_soon'
-            message = f"Hóa đơn {bill.get('_id')} sẽ đến hạn vào {due_date_str}. Vui lòng thanh toán sớm để tránh trễ hạn."
+            message = f"Hóa đơn {bill.get('_id')} sẽ đến hạn vào {due_date_str}."
         elif days_diff < 0:
             notif_type = 'rent_overdue'
-            message = f"Hóa đơn {bill.get('_id')} đã quá hạn {abs(days_diff)} ngày. Vui lòng thanh toán ngay."
+            message = f"Hóa đơn {bill.get('_id')} đã quá hạn {abs(days_diff)} ngày."
         else:
             continue
         
-        # Avoid duplicate notifications for the same bill & type
-        existing = notifications_collection.find_one({
-            'type': notif_type,
-            'metadata.bill_id': bill.get('_id')
-        })
-        if existing:
+        # Check duplicate
+        if check_duplicate_notification(notif_type, bill.get('_id')):
             continue
         
-        notification = create_notification_record({
+        # Create notification
+        notification = create_notification_document({
             'user_id': bill.get('tenant_id'),
             'title': 'Nhắc nhở thanh toán tiền nhà',
             'message': message,
@@ -199,11 +272,15 @@ def run_rent_reminders():
         })
         created.append(notification['_id'])
     
-    return jsonify({'message': 'Đã chạy nhắc nhở tiền nhà', 'created': created}), 200
+    return jsonify({
+        'message': 'Đã chạy nhắc nhở tiền nhà',
+        'created': created
+    }), 200
+
+
+# ============== Entry Point ==============
 
 if __name__ == '__main__':
-    import os
+    print(f"\n{'='*50}\n  {Config.SERVICE_NAME.upper()}\n  Port: {Config.SERVICE_PORT}\n{'='*50}\n")
     register_service()
-    debug_mode = os.getenv('FLASK_DEBUG', 'false').lower() == 'true'
-    app.run(host='0.0.0.0', port=SERVICE_PORT, debug=debug_mode)
-
+    app.run(host='0.0.0.0', port=Config.SERVICE_PORT, debug=Config.DEBUG)

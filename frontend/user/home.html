@@ -1,0 +1,810 @@
+<!DOCTYPE html>
+<html lang="vi" class="light">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      http-equiv="Cache-Control"
+      content="no-cache, no-store, must-revalidate"
+    />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
+    <title>Trang chủ - MotelHDK</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&family=Noto+Sans:wght@400;500;700&display=swap"
+      rel="stylesheet"
+    />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap"
+    />
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              primary: "#ea2a33",
+              "primary-hover": "#d41f27",
+              "bg-soft": "#f9f6f6",
+            },
+            boxShadow: {
+              glow: "0 10px 25px rgba(234, 42, 51, 0.25)",
+              card: "0 10px 30px rgba(0, 0, 0, 0.06)",
+            },
+            fontFamily: {
+              display: ["Be Vietnam Pro", "Noto Sans", "sans-serif"],
+              body: ["Be Vietnam Pro", "Noto Sans", "sans-serif"],
+            },
+          },
+        },
+      };
+    </script>
+    <style>
+      body {
+        font-family: "Be Vietnam Pro", "Noto Sans", sans-serif;
+        background: #f9f6f6;
+      }
+      .shadow-glow {
+        box-shadow: 0 10px 25px rgba(234, 42, 51, 0.25);
+      }
+      .shadow-card {
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.06);
+      }
+      .dropdown-menu {
+        display: none;
+        opacity: 0;
+        transform: translateY(8px);
+        transition: opacity 150ms ease, transform 150ms ease;
+      }
+      .dropdown-menu.show {
+        display: block;
+        opacity: 1;
+        transform: translateY(0);
+      }
+      .chip {
+        border: 1px solid #e5e7eb;
+        background: #fff;
+        color: #4b5563;
+        padding: 0.5rem 0.85rem;
+        border-radius: 9999px;
+        font-weight: 600;
+        transition: all 150ms ease;
+      }
+      .chip:hover {
+        border-color: #d1d5db;
+        color: #111827;
+      }
+      .chip.active {
+        background: rgba(234, 42, 51, 0.1);
+        color: #ea2a33;
+        border-color: #f3d0d2;
+      }
+    </style>
+  </head>
+  <body
+    class="bg-bg-soft text-gray-900 font-display min-h-screen flex flex-col relative"
+  >
+    <!-- floating vnpay notice -->
+    <div
+      id="vnpayNotice"
+      class="hidden fixed top-24 right-5 z-50 max-w-sm w-full"
+    ></div>
+
+    <!-- background decorations -->
+    <div class="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
+      <div
+        class="absolute -top-24 -left-16 w-80 h-80 bg-primary/10 rounded-full blur-[100px]"
+      ></div>
+      <div
+        class="absolute bottom-0 right-0 w-96 h-96 bg-orange-200/30 rounded-full blur-[120px]"
+      ></div>
+    </div>
+
+    <!-- Header placeholder - will be replaced by layout.js -->
+    <div id="layout-header"></div>
+
+    <!-- Main Content -->
+    <main
+      class="flex-1 max-w-[1280px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 flex flex-col gap-8"
+    >
+      <!-- Hero -->
+      <section
+        class="@container relative overflow-hidden rounded-2xl shadow-card bg-cover bg-center"
+        style="
+          background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuCXtQpGpIeAzHxj38RfYSTvt_AZZOQs_CrTxQgsIMFqTcD5pSpARxQrrf3kYxe6o6zl9Ce1Y4Wmgcl580QDTKMA6yHmXvKwao28T_9Fa4vQZ-8RaV7s7Bn-a0c3dwYo1di6Krvnk9AOpCGvOFFo8seK1bvdE7l7pqtQK9LWaaz23Hz_htnGJrbJklt38uS80enGWAbb018SMGtp4OPZ_c8__rer44OzULB7CxHA-BZEFBsz2KM7cADiVJmTO2Zoh8i7nAomXTWqcbNc');
+        "
+      >
+        <div
+          class="absolute inset-0 bg-gradient-to-r from-black/80 to-transparent"
+        ></div>
+        <div
+          class="relative flex min-h-[320px] flex-col items-start justify-center gap-6 p-8 md:p-12"
+        >
+          <div class="flex flex-col gap-2 text-left max-w-2xl">
+            <h1
+              class="text-white text-4xl font-black leading-tight tracking-[-0.033em] md:text-5xl"
+            >
+              Chào mừng,
+              <span
+                id="welcomeName"
+                class="underline decoration-primary underline-offset-4"
+                >bạn</span
+              >!
+            </h1>
+            <h2 class="text-white/90 text-base font-medium md:text-lg">
+              Tìm kiếm không gian sống lý tưởng hoặc quản lý các hóa đơn của bạn
+              ngay hôm nay.
+            </h2>
+          </div>
+          <button
+            onclick="window.location.href='/user/bills.html'"
+            class="flex h-12 items-center justify-center rounded-lg bg-primary px-6 text-white text-base font-bold shadow-lg transition-transform hover:scale-105 active:scale-95"
+          >
+            <span class="material-symbols-outlined mr-2">history</span>
+            <span class="truncate">Xem lịch sử giao dịch</span>
+          </button>
+        </div>
+      </section>
+
+      <!-- Filters -->
+      <section
+        class="sticky top-[76px] z-30 bg-white p-4 rounded-xl shadow-card border border-gray-100 flex flex-col gap-3"
+      >
+        <div class="flex flex-wrap gap-2" id="filterChips">
+          <button data-filter="all" class="chip active">Tất cả</button>
+          <button data-filter="available" class="chip">Còn trống</button>
+          <button data-filter="under3" class="chip">Dưới 3tr</button>
+          <button data-filter="3to5" class="chip">3tr - 5tr</button>
+          <button data-filter="balcony" class="chip">Có ban công</button>
+        </div>
+      </section>
+
+      <!-- Rooms -->
+      <section id="rooms" class="flex flex-col gap-4">
+        <div class="flex items-center justify-between">
+          <h2 class="text-2xl font-bold text-gray-900">
+            Danh sách phòng trống
+          </h2>
+          <span id="roomCount" class="text-gray-500 text-sm">0 phòng</span>
+        </div>
+        <div
+          id="roomsGrid"
+          class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6"
+        >
+          <div class="col-span-full text-center py-12 text-gray-500">
+            Đang tải danh sách phòng...
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- Room Detail Modal -->
+    <div
+      id="roomModal"
+      class="hidden fixed inset-0 z-50 flex items-center justify-center p-4"
+    >
+      <div
+        class="absolute inset-0 bg-black/60 backdrop-blur-sm"
+        onclick="closeRoomModal()"
+      ></div>
+      <div
+        class="relative w-full max-w-4xl max-h-[90vh] bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col md:flex-row animate-in fade-in duration-200"
+      >
+        <button
+          onclick="closeRoomModal()"
+          class="absolute top-4 right-4 z-20 p-2 bg-black/30 hover:bg-black/50 rounded-full text-white transition"
+        >
+          <span class="material-symbols-outlined">close</span>
+        </button>
+        <div class="w-full md:w-1/2 bg-gray-100 relative group">
+          <img
+            id="carouselImage"
+            src=""
+            alt="Room"
+            class="h-72 md:h-full w-full object-cover"
+          />
+          <div
+            class="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-2"
+            id="imageIndicators"
+          ></div>
+          <button
+            onclick="prevImage()"
+            class="carousel-btn absolute left-3 top-1/2 -translate-y-1/2 p-2 rounded-full bg-black/30 text-white opacity-0 group-hover:opacity-100 transition"
+          >
+            <span class="material-symbols-outlined">chevron_left</span>
+          </button>
+          <button
+            onclick="nextImage()"
+            class="carousel-btn absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-full bg-black/30 text-white opacity-0 group-hover:opacity-100 transition"
+          >
+            <span class="material-symbols-outlined">chevron_right</span>
+          </button>
+        </div>
+        <div class="w-full md:w-1/2 p-6 md:p-8 overflow-y-auto">
+          <div class="flex items-start justify-between mb-4">
+            <div>
+              <span
+                id="modalRoomStatus"
+                class="inline-block px-2 py-1 rounded bg-green-100 text-green-700 text-xs font-bold mb-2"
+                >Đang trống</span
+              >
+              <h3 id="modalRoomName" class="text-2xl font-bold text-gray-900">
+                Tên phòng
+              </h3>
+              <p id="modalRoomType" class="text-gray-500 text-sm mt-1">
+                Loại phòng
+              </p>
+            </div>
+            <div class="text-right">
+              <p id="modalRoomPrice" class="text-primary text-xl font-black">
+                0 đ
+              </p>
+              <p class="text-gray-400 text-xs">/tháng</p>
+            </div>
+          </div>
+          <div class="grid grid-cols-2 gap-4 py-4 border-y border-gray-100">
+            <div class="flex items-center gap-3">
+              <div class="p-2 rounded-lg bg-orange-50 text-orange-600">
+                <span class="material-symbols-outlined text-[20px]"
+                  >straighten</span
+                >
+              </div>
+              <div>
+                <p class="text-xs text-gray-500">Diện tích</p>
+                <p id="modalRoomArea" class="text-sm font-bold text-gray-900">
+                  -- m²
+                </p>
+              </div>
+            </div>
+            <div class="flex items-center gap-3">
+              <div class="p-2 rounded-lg bg-purple-50 text-purple-600">
+                <span class="material-symbols-outlined text-[20px]"
+                  >layers</span
+                >
+              </div>
+              <div>
+                <p class="text-xs text-gray-500">Tầng</p>
+                <p id="modalRoomFloor" class="text-sm font-bold text-gray-900">
+                  Tầng --
+                </p>
+              </div>
+            </div>
+            <div class="flex items-center gap-3">
+              <div class="p-2 rounded-lg bg-blue-50 text-blue-600">
+                <span class="material-symbols-outlined text-[20px]">bolt</span>
+              </div>
+              <div>
+                <p class="text-xs text-gray-500">Giá điện</p>
+                <p
+                  id="modalElectricPrice"
+                  class="text-sm font-bold text-gray-900"
+                >
+                  -- đ
+                </p>
+              </div>
+            </div>
+            <div class="flex items-center gap-3">
+              <div class="p-2 rounded-lg bg-cyan-50 text-cyan-600">
+                <span class="material-symbols-outlined text-[20px]"
+                  >water_drop</span
+                >
+              </div>
+              <div>
+                <p class="text-xs text-gray-500">Giá nước</p>
+                <p id="modalWaterPrice" class="text-sm font-bold text-gray-900">
+                  -- đ
+                </p>
+              </div>
+            </div>
+          </div>
+          <div class="py-4">
+            <h4 class="text-sm font-bold text-gray-900 mb-3">
+              Tiện ích có sẵn
+            </h4>
+            <div
+              id="amenitiesList"
+              class="flex flex-wrap gap-2 text-sm text-gray-600"
+            ></div>
+          </div>
+          <div class="flex-1 min-h-[80px]">
+            <h4 class="text-sm font-bold text-gray-900 mb-2">Mô tả chi tiết</h4>
+            <p
+              id="descriptionText"
+              class="text-sm text-gray-600 leading-relaxed"
+            >
+              --
+            </p>
+          </div>
+          <div
+            id="bookingSection"
+            class="pt-4 mt-4 border-t border-gray-100"
+          ></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Footer placeholder - will be replaced by layout.js -->
+    <div id="layout-footer"></div>
+
+    <script src="/assets/js/common.js"></script>
+    <script src="/assets/js/user/layout.js"></script>
+    <script>
+      let allRooms = [];
+      let currentRoom = null;
+      let currentImageIndex = 0;
+      let roomImages = [];
+
+      document.addEventListener("DOMContentLoaded", () => {
+        if (!Auth.isLoggedIn()) {
+          window.location.href = "/auth/login.html";
+          return;
+        }
+
+        // Layout.js handles user info, we just need to wait for it
+        // then update welcomeName if it exists
+        setTimeout(() => {
+          const user = Auth.getUser();
+          const welcomeName = document.getElementById("welcomeName");
+          if (welcomeName && user) {
+            welcomeName.textContent =
+              user.fullname || user.name || user.username || "User";
+          }
+        }, 100);
+
+        loadRooms();
+        initFilters();
+        checkVNPayResult();
+      });
+
+      function checkVNPayResult() {
+        const params = new URLSearchParams(window.location.search);
+        const vnpayStatus = params.get("vnpay");
+        if (!vnpayStatus) return;
+
+        const roomId = params.get("room_id");
+
+        window.history.replaceState({}, "", "/user/home.html");
+
+        const notice = document.getElementById("vnpayNotice");
+        if (notice) {
+          const clsMap = {
+            success: "bg-green-50 border-green-200 text-green-800",
+            warning: "bg-amber-50 border-amber-200 text-amber-800",
+            error: "bg-red-50 border-red-200 text-red-800",
+          };
+
+          const base = roomId ? `Phòng: ${roomId}` : "";
+          let cfg = { title: "Thanh toán", msg: "", cls: clsMap.success };
+          if (vnpayStatus === "success")
+            cfg = {
+              title: "Thanh toán thành công",
+              msg: "Giao dịch VNPay đã được xác nhận. Tiền cọc phòng đã cập nhật.",
+              cls: clsMap.success,
+            };
+          else if (vnpayStatus === "cancel")
+            cfg = {
+              title: "Đã hủy thanh toán",
+              msg: "Bạn đã hủy thanh toán. Phòng vẫn còn trống để đặt lại.",
+              cls: clsMap.warning,
+            };
+          else if (vnpayStatus === "pending")
+            cfg = {
+              title: "Đang xử lý",
+              msg: "Thanh toán đang được xác minh. Vui lòng đợi thêm.",
+              cls: clsMap.warning,
+            };
+          else
+            cfg = {
+              title: "Thanh toán thất bại",
+              msg: "Có lỗi khi thanh toán. Vui lòng thử lại sau.",
+              cls: clsMap.error,
+            };
+
+          notice.className = `rounded-2xl border p-4 shadow-lg ${cfg.cls}`;
+          notice.innerHTML = `
+                        <div class=\"flex items-start gap-3\">\n                        <span class=\"material-symbols-outlined mt-0.5\">${
+                          vnpayStatus === "success"
+                            ? "check_circle"
+                            : vnpayStatus === "pending"
+                            ? "hourglass_top"
+                            : "error"
+                        }</span>\n                        <div class=\"flex-1\">\n                            <p class=\"font-bold text-sm\">${
+            cfg.title
+          }</p>\n                            <p class=\"text-xs mt-1\">${
+            cfg.msg
+          }</p>\n                            ${
+            base ? `<p class=\"text-[11px] mt-1 opacity-80\">${base}</p>` : ""
+          }\n                        </div>\n                        <button class=\"text-sm font-semibold\" onclick=\"this.parentElement.parentElement.classList.add('hidden')\">Đóng</button>\n                    </div>`;
+          notice.classList.remove("hidden");
+        }
+      }
+
+      function initFilters() {
+        const chips = document.querySelectorAll("#filterChips .chip");
+        chips.forEach((chip) =>
+          chip.addEventListener("click", () => {
+            chips.forEach((c) => c.classList.remove("active"));
+            chip.classList.add("active");
+            filterRooms();
+          })
+        );
+      }
+
+      async function loadRooms() {
+        try {
+          const res = await API.get("/rooms");
+          if (res.ok) {
+            allRooms = res.data.rooms || res.data || [];
+            filterRooms();
+          } else {
+            showError("Không thể tải danh sách phòng");
+          }
+        } catch (error) {
+          console.error("Load rooms error:", error);
+          showError("Lỗi kết nối server");
+        }
+      }
+
+      function filterRooms() {
+        const activeChip = document.querySelector("#filterChips .chip.active");
+        const filter = activeChip ? activeChip.dataset.filter : "all";
+        let filtered = allRooms;
+        if (filter === "available")
+          filtered = filtered.filter((r) => r.status === "available");
+        if (filter === "under3")
+          filtered = filtered.filter((r) => (r.price || 0) < 3000000);
+        if (filter === "3to5")
+          filtered = filtered.filter(
+            (r) => (r.price || 0) >= 3000000 && (r.price || 0) <= 5000000
+          );
+        if (filter === "balcony")
+          filtered = filtered.filter((r) =>
+            (r.amenities || []).includes("balcony")
+          );
+        renderRooms(filtered);
+      }
+
+      function renderRooms(rooms) {
+        document.getElementById(
+          "roomCount"
+        ).textContent = `${rooms.length} phòng`;
+        if (!rooms.length) {
+          document.getElementById("roomsGrid").innerHTML = `
+                        <div class="col-span-full text-center py-12 text-gray-500">Không tìm thấy phòng nào</div>
+                    `;
+          return;
+        }
+
+        document.getElementById("roomsGrid").innerHTML = rooms
+          .map((room) => {
+            const firstImage =
+              room.images?.[0] || "/assets/images/room-placeholder.svg";
+            const available = room.status === "available";
+            const statusClass = available
+              ? "bg-emerald-100 text-emerald-700"
+              : "bg-gray-200 text-gray-600";
+            const statusText = available ? "Còn trống" : "Đã thuê";
+            return `
+                        <div onclick="viewRoom('${
+                          room._id
+                        }')" class="group cursor-pointer flex flex-col rounded-2xl bg-white shadow-sm border border-gray-100 overflow-hidden transition hover:shadow-glow">
+                            <div class="relative aspect-[4/3] bg-gray-100 overflow-hidden">
+                                <div class="absolute inset-0 bg-cover bg-center transition-transform duration-500 group-hover:scale-105" style="background-image:url('${firstImage}')"></div>
+                                <div class="absolute top-3 right-3 ${statusClass} text-xs font-bold px-3 py-1 rounded-full shadow-sm">${statusText}</div>
+                            </div>
+                            <div class="p-4 flex flex-col gap-3 flex-1">
+                                <div class="flex items-center gap-2 text-xs text-gray-500">
+                                    <span class="rounded-full bg-gray-100 px-2 py-1">${
+                                      room.code || room._id || "---"
+                                    }</span>
+                                    <span class="rounded-full bg-gray-100 px-2 py-1">Tầng ${
+                                      room.floor || "--"
+                                    }</span>
+                                    <span class="rounded-full bg-gray-100 px-2 py-1">${
+                                      room.area || "--"
+                                    } m²</span>
+                                </div>
+                                <div class="flex items-start justify-between gap-3">
+                                    <div>
+                                        <h3 class="font-black text-lg text-[#1b0e0e] line-clamp-1">${
+                                          room.name || "Phòng"
+                                        }</h3>
+                                        <p class="text-sm text-gray-500 mt-1 line-clamp-2">${
+                                          room.description ||
+                                          "Phòng mới, sạch sẽ và đầy đủ tiện ích."
+                                        }</p>
+                                    </div>
+                                    <div class="text-right">
+                                        <div class="text-2xl font-bold text-primary">${formatCurrency(
+                                          room.price
+                                        )}</div>
+                                        <div class="text-xs text-gray-500">/ tháng</div>
+                                    </div>
+                                </div>
+                                <div class="flex items-center gap-3 text-gray-500 text-sm">
+                                    ${(room.amenities || [])
+                                      .slice(0, 3)
+                                      .map(
+                                        (am) =>
+                                          `<span class="flex items-center gap-1"><span class="material-symbols-outlined text-[18px] text-primary">${amenityIcon(
+                                            am
+                                          )}</span>${amenityLabel(am)}</span>`
+                                      )
+                                      .join("")}
+                                </div>
+                                <div class="pt-2">
+                                    <span class="inline-flex items-center justify-center rounded-lg bg-primary text-white px-4 py-2 text-sm font-semibold transition hover:brightness-105">Xem chi tiết</span>
+                                </div>
+                            </div>
+                        </div>`;
+          })
+          .join("");
+      }
+
+      function amenityLabel(key) {
+        const labels = {
+          wifi: "Wifi",
+          air_conditioner: "Máy lạnh",
+          water_heater: "Nước nóng",
+          washing_machine: "Máy giặt",
+          fridge: "Tủ lạnh",
+          kitchen: "Bếp",
+          private_wc: "WC riêng",
+          balcony: "Ban công",
+          parking: "Để xe",
+          security: "Bảo vệ",
+          elevator: "Thang máy",
+          furniture: "Nội thất",
+          bed: "Giường",
+        };
+        return labels[key] || key;
+      }
+
+      function amenityIcon(key) {
+        const map = {
+          wifi: "wifi",
+          air_conditioner: "ac_unit",
+          water_heater: "water_heater",
+          washing_machine: "local_laundry_service",
+          fridge: "kitchen",
+          kitchen: "restaurant_menu",
+          private_wc: "bathtub",
+          balcony: "deck",
+          parking: "two_wheeler",
+          security: "shield",
+          elevator: "elevator",
+          furniture: "weekend",
+          bed: "king_bed",
+        };
+        return map[key] || "check_circle";
+      }
+
+      function viewRoom(roomId) {
+        currentRoom = allRooms.find((r) => r._id === roomId);
+        if (!currentRoom) return;
+
+        roomImages = currentRoom.images?.length
+          ? currentRoom.images
+          : ["/assets/images/room-placeholder.svg"];
+        currentImageIndex = 0;
+        updateCarousel();
+
+        document.getElementById("modalRoomName").textContent = currentRoom.name;
+        document.getElementById("modalRoomType").textContent = getRoomTypeLabel(
+          currentRoom.room_type
+        );
+        document.getElementById("modalRoomPrice").textContent = formatCurrency(
+          currentRoom.price
+        );
+        document.getElementById("modalRoomArea").textContent = `${
+          currentRoom.area || "--"
+        } m²`;
+        document.getElementById("modalRoomFloor").textContent = `Tầng ${
+          currentRoom.floor || "--"
+        }`;
+        document.getElementById(
+          "modalElectricPrice"
+        ).textContent = `${formatNumber(currentRoom.electricity_price || 0)} đ`;
+        document.getElementById(
+          "modalWaterPrice"
+        ).textContent = `${formatNumber(currentRoom.water_price || 0)} đ`;
+
+        const statusEl = document.getElementById("modalRoomStatus");
+        if (currentRoom.status === "available") {
+          statusEl.className =
+            "inline-block px-2 py-1 rounded bg-green-100 text-green-700 text-xs font-bold mb-2";
+          statusEl.textContent = "Đang trống";
+        } else {
+          statusEl.className =
+            "inline-block px-2 py-1 rounded bg-gray-200 text-gray-700 text-xs font-bold mb-2";
+          statusEl.textContent = "Đã thuê";
+        }
+
+        const amenities = currentRoom.amenities || [];
+        const labels = {
+          wifi: "📶 WiFi",
+          air_conditioner: "❄️ Máy lạnh",
+          water_heater: "🚿 Nước nóng",
+          washing_machine: "🧺 Máy giặt",
+          fridge: "🧊 Tủ lạnh",
+          kitchen: "🍳 Bếp",
+          private_wc: "🚽 WC riêng",
+          balcony: "🌇 Ban công",
+          parking: "🏍️ Để xe",
+          security: "🔒 Bảo vệ",
+          elevator: "🛗 Thang máy",
+          furniture: "🛋️ Nội thất",
+        };
+        document.getElementById("amenitiesList").innerHTML = amenities.length
+          ? amenities
+              .map(
+                (a) =>
+                  `<span class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-gray-200 bg-gray-50 text-xs font-medium text-gray-600">${
+                    labels[a] || a
+                  }</span>`
+              )
+              .join("")
+          : '<span class="text-gray-400 text-sm">Không có thông tin</span>';
+
+        document.getElementById("descriptionText").textContent =
+          currentRoom.description || "Không có mô tả";
+
+        if (currentRoom.status === "available") {
+          const deposit = formatCurrency(currentRoom.deposit || 0);
+          document.getElementById("bookingSection").innerHTML = `
+                        <div class="bg-gray-50 rounded-xl p-4 mb-3 flex items-center justify-between">
+                            <div>
+                                <p class="text-sm text-gray-600">Tiền cọc giữ phòng</p>
+                                <p class="text-lg font-bold text-primary">${deposit}</p>
+                            </div>
+                            <span class="text-xs text-gray-500">Thanh toán qua VNPay</span>
+                        </div>
+                        <div id="bookingError" class="hidden bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-xl text-sm mb-3"></div>
+                        <div class="flex gap-3">
+                            <button id="bookBtn" onclick="handleBookRoom('${currentRoom._id}')" class="flex-1 py-3 px-4 rounded-lg bg-primary hover:bg-primary-hover text-white font-bold text-sm shadow-glow transition active:scale-[0.98]">
+                                <span id="bookBtnText">Đặt cọc ngay</span>
+                            </button>
+                            <button class="px-5 py-3 rounded-lg border border-gray-200 hover:bg-gray-50 text-gray-700 font-semibold text-sm">Liên hệ</button>
+                        </div>`;
+        } else {
+          document.getElementById("bookingSection").innerHTML = `
+                        <div class="bg-gray-100 rounded-xl p-4 text-center text-gray-500">Phòng này hiện đã có người thuê</div>`;
+        }
+
+        document.getElementById("roomModal").classList.remove("hidden");
+      }
+
+      function updateCarousel() {
+        document.getElementById("carouselImage").src =
+          roomImages[currentImageIndex];
+        document.getElementById("imageIndicators").innerHTML = roomImages
+          .map(
+            (_, idx) => `
+                    <button onclick="goToImage(${idx})" class="w-2 h-2 rounded-full ${
+              idx === currentImageIndex
+                ? "bg-white"
+                : "bg-white/50 hover:bg-white"
+            } transition"></button>
+                `
+          )
+          .join("");
+      }
+      function prevImage() {
+        currentImageIndex =
+          (currentImageIndex - 1 + roomImages.length) % roomImages.length;
+        updateCarousel();
+      }
+      function nextImage() {
+        currentImageIndex = (currentImageIndex + 1) % roomImages.length;
+        updateCarousel();
+      }
+      function goToImage(idx) {
+        currentImageIndex = idx;
+        updateCarousel();
+      }
+      function closeRoomModal() {
+        document.getElementById("roomModal").classList.add("hidden");
+      }
+
+      async function handleBookRoom(roomId) {
+        const btn = document.getElementById("bookBtn");
+        const btnText = document.getElementById("bookBtnText");
+        const errorDiv = document.getElementById("bookingError");
+        if (btn) btn.disabled = true;
+        if (btnText) btnText.textContent = "Đang kiểm tra...";
+        if (errorDiv) errorDiv.classList.add("hidden");
+        try {
+          const userRes = await API.get("/users/me");
+          if (!userRes.ok) {
+            showBookingError("Không thể xác thực người dùng");
+            resetBookBtn();
+            return;
+          }
+          const user = userRes.data;
+          const hasPhone = user.phone && user.phone.trim();
+          const hasCCCD = user.id_card && user.id_card.trim();
+          if (!hasPhone || !hasCCCD) {
+            const missing = [];
+            if (!hasPhone) missing.push("số điện thoại");
+            if (!hasCCCD) missing.push("CCCD/CMND");
+            showBookingError(
+              `Bạn cần cập nhật ${missing.join(" và ")} trước khi đặt phòng`
+            );
+            resetBookBtn();
+            if (confirm("Đến trang cập nhật thông tin cá nhân?"))
+              window.location.href = "/user/profile.html";
+            return;
+          }
+          if (btnText) btnText.textContent = "Đang tạo đơn đặt phòng...";
+          const room = allRooms.find((r) => r._id === roomId);
+          if (!room || room.deposit <= 0) {
+            showBookingError("Phòng chưa được cấu hình tiền cọc");
+            resetBookBtn();
+            return;
+          }
+          if (btnText) btnText.textContent = "Đang chuyển đến VNPay...";
+          const paymentRes = await API.post(
+            "/payments/vnpay/room-deposit/create",
+            { room_id: roomId }
+          );
+          if (!paymentRes.ok || !paymentRes.data?.payment_url) {
+            showBookingError(
+              paymentRes.data?.message || "Không thể tạo link thanh toán"
+            );
+            resetBookBtn();
+            return;
+          }
+          window.location.href = paymentRes.data.payment_url;
+        } catch (error) {
+          console.error("Booking error:", error);
+          showBookingError("Lỗi kết nối server");
+          resetBookBtn();
+        }
+      }
+
+      function showBookingError(msg) {
+        const errorDiv = document.getElementById("bookingError");
+        if (errorDiv) {
+          errorDiv.textContent = msg;
+          errorDiv.classList.remove("hidden");
+        }
+      }
+      function resetBookBtn() {
+        const btn = document.getElementById("bookBtn");
+        const btnText = document.getElementById("bookBtnText");
+        if (btn) btn.disabled = false;
+        if (btnText) btnText.textContent = "Đặt cọc ngay";
+      }
+      function showError(msg) {
+        document.getElementById(
+          "roomsGrid"
+        ).innerHTML = `<div class="col-span-full text-center py-12 text-red-500">${msg}</div>`;
+      }
+      function getRoomTypeLabel(type) {
+        const types = {
+          single: "Phòng đơn",
+          double: "Phòng đôi",
+          studio: "Studio",
+          apartment: "Căn hộ",
+        };
+        return types[type] || type || "Khác";
+      }
+      function formatCurrency(amount) {
+        return new Intl.NumberFormat("vi-VN").format(amount || 0) + "đ";
+      }
+      function formatNumber(num) {
+        return new Intl.NumberFormat("vi-VN").format(num || 0);
+      }
+      function logout() {
+        Auth.logout();
+      }
+      document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") closeRoomModal();
+      });
+    </script>
+  </body>
+</html>

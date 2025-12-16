@@ -1,56 +1,113 @@
-import consul
+"""
+Auth Service - Consul Service Registry
+Handles service registration and health check with Consul
+"""
 import socket
 import os
-from config import SERVICE_NAME, SERVICE_PORT, CONSUL_HOST, CONSUL_PORT
+import time
+import consul
+from config import Config
+
+
+class ServiceRegistry:
+    """Consul service registry handler"""
+    
+    def __init__(self):
+        self.consul_client = None
+        self.service_id = None
+    
+    def _wait_for_consul(self, max_retries=10, retry_delay=2):
+        """Wait for Consul to be ready"""
+        for attempt in range(max_retries):
+            try:
+                self.consul_client = consul.Consul(
+                    host=Config.CONSUL_HOST,
+                    port=Config.CONSUL_PORT
+                )
+                # Test connection
+                self.consul_client.agent.self()
+                print(f"[CONSUL] ✓ Connected to Consul at {Config.CONSUL_HOST}:{Config.CONSUL_PORT}")
+                return True
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    print(f"[CONSUL] Waiting for Consul... (attempt {attempt + 1}/{max_retries})")
+                    time.sleep(retry_delay)
+                else:
+                    print(f"[CONSUL] ✗ Cannot connect to Consul: {e}")
+                    return False
+        return False
+    
+    def _get_service_address(self):
+        """Get the service address for registration"""
+        # Prefer a stable, resolvable name on the docker network.
+        # docker-compose sets container_name: auth-service; this is resolvable via Docker DNS.
+        return os.getenv('SERVICE_ADDRESS') or Config.SERVICE_NAME
+
+    def _get_service_id(self):
+        """Get a stable service ID to avoid growing instances on each restart."""
+        # Allow overriding for scaling, but default to stable per service+port.
+        return os.getenv('SERVICE_ID') or f"{Config.SERVICE_NAME}-{Config.SERVICE_PORT}"
+    
+    def register(self):
+        """Register service with Consul"""
+        if not self._wait_for_consul():
+            return False
+        
+        try:
+            service_address = self._get_service_address()
+            health_url = f"http://{service_address}:{Config.SERVICE_PORT}/health"
+
+            # Stable service ID (prevents stale instances piling up in Consul)
+            self.service_id = self._get_service_id()
+
+            # Best-effort: clear any previous registration with the same ID
+            try:
+                self.consul_client.agent.service.deregister(self.service_id)
+            except Exception:
+                pass
+            
+            self.consul_client.agent.service.register(
+                name=Config.SERVICE_NAME,
+                service_id=self.service_id,
+                address=service_address,
+                port=Config.SERVICE_PORT,
+                check={
+                    "HTTP": health_url,
+                    "Interval": "10s",
+                    "Timeout": "5s",
+                    # Automatically remove dead/stale entries if a container dies ungracefully
+                    "DeregisterCriticalServiceAfter": "1m",
+                }
+            )
+            
+            print(f"[CONSUL] ✓ Registered {Config.SERVICE_NAME}")
+            print(f"[CONSUL]   Address: {service_address}:{Config.SERVICE_PORT}")
+            print(f"[CONSUL]   Health: {health_url}")
+            return True
+            
+        except Exception as e:
+            print(f"[CONSUL] ✗ Registration failed: {e}")
+            return False
+    
+    def deregister(self):
+        """Deregister service from Consul"""
+        if self.consul_client and self.service_id:
+            try:
+                self.consul_client.agent.service.deregister(self.service_id)
+                print(f"[CONSUL] ✓ Deregistered {self.service_id}")
+            except Exception as e:
+                print(f"[CONSUL] ✗ Deregistration failed: {e}")
+
+
+# Global registry instance
+_registry = ServiceRegistry()
+
 
 def register_service():
-    """Register service with Consul"""
-    import time
-    
-    # Đợi Consul sẵn sàng
-    max_retries = 10
-    for i in range(max_retries):
-        try:
-            c = consul.Consul(host=CONSUL_HOST, port=CONSUL_PORT)
-            # Test connection
-            c.agent.self()
-            break
-        except Exception as e:
-            if i < max_retries - 1:
-                print(f"[CONSUL] Waiting for Consul... (attempt {i+1}/{max_retries})")
-                time.sleep(2)
-            else:
-                print(f"[CONSUL] Cannot connect to Consul: {e}")
-                return
-    
-    try:
-        # Trong Docker network, sử dụng container name (hostname) để các service khác có thể kết nối
-        container_name = os.getenv('HOSTNAME', socket.gethostname())
-        
-        c = consul.Consul(host=CONSUL_HOST, port=CONSUL_PORT)
-        
-        try:
-            container_ip = socket.gethostbyname(container_name)
-            if container_ip == "127.0.0.1":
-                service_address = container_name
-            else:
-                service_address = container_ip
-        except:
-            service_address = container_name
-        
-        health_url = f"http://{service_address}:{SERVICE_PORT}/health"
-        
-        c.agent.service.register(
-            SERVICE_NAME,
-            address=service_address,
-            port=SERVICE_PORT,
-            check=consul.Check.http(health_url, interval="10s", timeout="5s")
-        )
-        
-        print(f"[CONSUL] ✓ Registered {SERVICE_NAME} at {service_address}:{SERVICE_PORT}")
-        print(f"[CONSUL]   Health check: {health_url}")
-    except Exception as e:
-        print(f"[CONSUL] ✗ Error registering service: {e}")
-        import traceback
-        traceback.print_exc()
+    """Register service with Consul (backward compatible)"""
+    return _registry.register()
 
+
+def deregister_service():
+    """Deregister service from Consul"""
+    return _registry.deregister()

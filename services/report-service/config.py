@@ -1,19 +1,20 @@
+"""Report Service Configuration"""
 import os
 
-# MongoDB configuration
-MONGO_URI = os.getenv('MONGO_URI', 'mongodb://localhost:27017/reports_db')
+class Config:
+    MONGO_URI = os.getenv('MONGO_URI', 'mongodb://localhost:27017/bills_db')
+    DB_NAME = 'bills_db'
+    COLLECTION_NAME = 'bills'
+    SERVICE_NAME = 'report-service'
+    SERVICE_PORT = int(os.getenv('SERVICE_PORT', '5009'))
+    JWT_SECRET = os.getenv('JWT_SECRET', 'your-super-secret-key-change-this')
+    CONSUL_HOST = os.getenv('CONSUL_HOST', 'localhost')
+    CONSUL_PORT = int(os.getenv('CONSUL_PORT', '8500'))
+    INTERNAL_API_KEY = os.getenv('INTERNAL_API_KEY', 'internal-secret-key')
+    DEBUG = os.getenv('FLASK_DEBUG', 'false').lower() == 'true'
 
-# Service configuration
-SERVICE_NAME = "report-service"
-SERVICE_PORT = int(os.getenv('SERVICE_PORT', '5004'))
-
-# JWT configuration
-JWT_SECRET = os.getenv('JWT_SECRET', 'your-super-secret-key-change-this')
-
-# Consul configuration
-CONSUL_HOST = os.getenv('CONSUL_HOST', 'localhost')
-CONSUL_PORT = int(os.getenv('CONSUL_PORT', '8500'))
-
-# Database configuration
-DB_NAME = 'reports_db'
-BILLS_COLLECTION = 'bills'
+JWT_SECRET = Config.JWT_SECRET
+SERVICE_NAME = Config.SERVICE_NAME
+SERVICE_PORT = Config.SERVICE_PORT
+CONSUL_HOST = Config.CONSUL_HOST
+CONSUL_PORT = Config.CONSUL_PORT

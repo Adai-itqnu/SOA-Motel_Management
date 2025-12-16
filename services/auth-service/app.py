@@ -1,130 +1,148 @@
+"""
+Auth Service - Main Application
+Handles authentication: login, register, JWT, password hashing
+"""
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from werkzeug.security import generate_password_hash, check_password_hash
 import jwt
 import datetime
-from functools import wraps
-from config import JWT_SECRET, SERVICE_NAME, SERVICE_PORT
+import uuid
+import re
+import atexit
+import requests
+
+from config import Config
 from model import users_collection
-from service_registry import register_service
+from service_registry import register_service, deregister_service
+
 
 app = Flask(__name__)
+app.config.from_object(Config)
 CORS(app)
+atexit.register(deregister_service)
 
-# Load configuration
-app.config['SECRET_KEY'] = JWT_SECRET
-app.config['SERVICE_NAME'] = SERVICE_NAME
-app.config['SERVICE_PORT'] = SERVICE_PORT
 
-# Health check endpoint
+# ============== Utility Functions ==============
+
+def get_timestamp():
+    return datetime.datetime.utcnow().isoformat()
+
+
+def generate_user_id():
+    return f"USR{uuid.uuid4().hex[:8].upper()}"
+
+
+def validate_email(email):
+    pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+    return bool(re.match(pattern, email))
+
+
+def validate_phone(phone):
+    if not phone:
+        return True
+    pattern = r'^(0|\+84)[0-9]{9,10}$'
+    return bool(re.match(pattern, phone))
+
+
+def send_welcome_notification(user_id, fullname):
+    """Send welcome notification to new user via notification-service"""
+    try:
+        response = requests.post(
+            f"{Config.NOTIFICATION_SERVICE_URL}/api/notifications/welcome",
+            json={
+                'user_id': user_id,
+                'fullname': fullname
+            },
+            headers={
+                'X-Internal-Key': Config.INTERNAL_API_KEY
+            },
+            timeout=5
+        )
+        return response.status_code == 201
+    except Exception as e:
+        print(f"Failed to send welcome notification: {e}")
+        return False
+
+
+def format_user_response(user):
+    return {
+        'id': user['_id'],
+        'username': user.get('username', ''),
+        'email': user.get('email', ''),
+        'phone': user.get('phone', ''),
+        'fullname': user.get('fullname', ''),
+        'role': user.get('role', 'user'),
+        'status': user.get('status', 'active')
+    }
+
+
+# ============== Health Check ==============
+
 @app.route('/health', methods=['GET'])
-def health_check():
-    return jsonify({'status': 'healthy', 'service': app.config['SERVICE_NAME']}), 200
-
-# Decorator xác thực token
-def token_required(f):
-    @wraps(f)
-    def decorated(*args, **kwargs):
-        # Try both 'Authorization' and 'authorization' (nginx may lowercase headers)
-        token = request.headers.get('Authorization') or request.headers.get('authorization')
-        
-        if not token:
-            return jsonify({'message': 'Token không tồn tại!'}), 401
-        
-        try:
-            if token.startswith('Bearer '):
-                token = token[7:]
-            elif token.startswith('bearer '):
-                token = token[7:]
-            
-            data = jwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'])
-            current_user = users_collection.find_one({'_id': data['user_id']})
-            
-            if not current_user:
-                return jsonify({'message': 'Người dùng không tồn tại!'}), 401
-                
-        except jwt.ExpiredSignatureError:
-            return jsonify({'message': 'Token đã hết hạn!'}), 401
-        except jwt.InvalidTokenError:
-            return jsonify({'message': 'Token không hợp lệ!'}), 401
-        
-        return f(current_user, *args, **kwargs)
-    
-    return decorated
-
-# Decorator kiểm tra quyền admin
-def admin_required(f):
-    @wraps(f)
-    def decorated(current_user, *args, **kwargs):
-        if current_user.get('role') != 'admin':
-            return jsonify({'message': 'Yêu cầu quyền admin!'}), 403
-        return f(current_user, *args, **kwargs)
-    return decorated
+def health():
+    return jsonify({'status': 'healthy', 'service': Config.SERVICE_NAME}), 200
 
 
-# API Đăng ký
+# ============== Authentication APIs ==============
+
 @app.route('/api/auth/register', methods=['POST'])
 def register():
-    data = request.get_json()
+    """Register a new user account"""
+    data = request.get_json() or {}
     
-    # Validation - các trường bắt buộc
-    # Phone is now optional
-    required_fields = ['username', 'password', 'email', 'name']
-    for field in required_fields:
-        if field not in data:
-            return jsonify({'message': f'Thiếu trường {field}!'}), 400
+    # Validate required fields
+    required = ['username', 'password', 'email', 'fullname']
+    missing = [f for f in required if not data.get(f)]
+    if missing:
+        return jsonify({'message': f"Thiếu trường: {', '.join(missing)}"}), 400
     
-    # Các trường tenant (tùy chọn khi đăng ký, có thể cập nhật sau)
-    # id_card, address, date_of_birth, phone có thể để trống khi đăng ký
+    # Validate email
+    if not validate_email(data['email']):
+        return jsonify({'message': 'Email không hợp lệ!'}), 400
     
-    # Kiểm tra username đã tồn tại
+    # Validate phone if provided
+    if data.get('phone') and not validate_phone(data['phone']):
+        return jsonify({'message': 'Số điện thoại không hợp lệ!'}), 400
+    
+    # Validate password length
+    if len(data['password']) < 6:
+        return jsonify({'message': 'Mật khẩu phải có ít nhất 6 ký tự!'}), 400
+    
+    # Check duplicates
     if users_collection.find_one({'username': data['username']}):
         return jsonify({'message': 'Tên đăng nhập đã tồn tại!'}), 400
     
-    # Kiểm tra email đã tồn tại
     if users_collection.find_one({'email': data['email']}):
         return jsonify({'message': 'Email đã được sử dụng!'}), 400
     
-    # Kiểm tra user đầu tiên -> admin
-    user_count = users_collection.count_documents({})
-    role = 'admin' if user_count == 0 else 'user'
+    # First user becomes admin
+    is_first = users_collection.count_documents({}) == 0
+    role = 'admin' if is_first else 'user'
     
-    # Tạo user_id (tìm ID lớn nhất để tránh trùng)
-    existing_users = list(users_collection.find({}, {'_id': 1}).sort('_id', -1).limit(1))
-    if existing_users and existing_users[0].get('_id'):
-        last_id = existing_users[0]['_id']
-        if last_id.startswith('U'):
-            try:
-                last_num = int(last_id[1:])
-                user_id = f"U{last_num + 1:03d}"
-            except:
-                user_id = f"U{user_count + 1:03d}"
-        else:
-            user_id = f"U{user_count + 1:03d}"
-    else:
-        user_id = f"U{user_count + 1:03d}"
-    
-    # Tạo user mới với thông tin tenant
+    # Create user
+    timestamp = get_timestamp()
     new_user = {
-        '_id': user_id,
+        '_id': generate_user_id(),
         'username': data['username'],
-        'password_hash': generate_password_hash(data['password']),
-        'role': role,
-        'name': data['name'],
         'email': data['email'],
         'phone': data.get('phone', ''),
-        # Thông tin tenant (có thể để trống khi đăng ký)
-        'id_card': data.get('id_card', ''),
-        'address': data.get('address', ''),
-        'date_of_birth': data.get('date_of_birth', ''),
-        'status': 'active',  # active | inactive
-        'created_at': datetime.datetime.utcnow().isoformat(),
-        'updated_at': datetime.datetime.utcnow().isoformat(),
-        'last_login': None
+        'password': generate_password_hash(data['password']),
+        'role': role,
+        'fullname': data['fullname'],
+        'id_card': '',
+        'address': '',
+        'status': 'active',
+        'created_at': timestamp,
+        'updated_at': timestamp
     }
     
     try:
         users_collection.insert_one(new_user)
+        
+        # Send welcome notification
+        send_welcome_notification(new_user['_id'], new_user['fullname'])
+        
         return jsonify({
             'message': 'Đăng ký thành công!',
             'user_id': new_user['_id'],
@@ -133,165 +151,132 @@ def register():
     except Exception as e:
         return jsonify({'message': f'Lỗi đăng ký: {str(e)}'}), 500
 
-# API Đăng nhập
+
 @app.route('/api/auth/login', methods=['POST'])
 def login():
-    data = request.get_json()
+    """Login with username or email"""
+    data = request.get_json() or {}
     
-    if 'username' not in data or 'password' not in data:
-        return jsonify({'message': 'Thiếu username hoặc password!'}), 400
+    login_id = data.get('username') or data.get('email')
+    password = data.get('password')
     
-    user = users_collection.find_one({'username': data['username']})
+    if not login_id or not password:
+        return jsonify({'message': 'Thiếu thông tin đăng nhập!'}), 400
+    
+    # Find user by username or email
+    user = users_collection.find_one({
+        '$or': [
+            {'username': login_id},
+            {'email': login_id}
+        ]
+    })
     
     if not user:
-        return jsonify({'message': 'Tên đăng nhập hoặc mật khẩu không đúng!'}), 401
+        return jsonify({'message': 'Tài khoản không tồn tại!'}), 401
     
-    if not check_password_hash(user['password_hash'], data['password']):
-        return jsonify({'message': 'Tên đăng nhập hoặc mật khẩu không đúng!'}), 401
+    if not check_password_hash(user['password'], password):
+        return jsonify({'message': 'Mật khẩu không đúng!'}), 401
     
-    # Cập nhật last_login
-    users_collection.update_one(
-        {'_id': user['_id']},
-        {'$set': {'last_login': datetime.datetime.utcnow().isoformat()}}
-    )
+    if user.get('status') == 'inactive':
+        return jsonify({'message': 'Tài khoản đã bị khóa!'}), 403
     
-    # Tạo JWT token
+    # Generate JWT token
     token = jwt.encode({
         'user_id': user['_id'],
         'username': user['username'],
         'role': user['role'],
-        'exp': datetime.datetime.utcnow() + datetime.timedelta(hours=24)
-    }, app.config['SECRET_KEY'], algorithm='HS256')
+        'exp': datetime.datetime.utcnow() + datetime.timedelta(hours=Config.JWT_EXPIRY_HOURS)
+    }, Config.JWT_SECRET, algorithm='HS256')
     
     return jsonify({
         'message': 'Đăng nhập thành công!',
         'token': token,
-        'user': {
-            'id': user['_id'],
-            'username': user['username'],
-            'name': user['name'],
-            'email': user['email'],
-            'role': user['role']
-        }
+        'user': format_user_response(user)
     }), 200
 
-# API Verify token
+
 @app.route('/api/auth/verify', methods=['GET'])
-@token_required
-def verify_token(current_user):
-    return jsonify({
-        'valid': True,
-        'user': {
-            'id': current_user['_id'],
-            'username': current_user['username'],
-            'name': current_user['name'],
-            'email': current_user['email'],
-            'role': current_user['role']
-        }
-    }), 200
-
-# API Get current user
-@app.route('/api/auth/me', methods=['GET'])
-@token_required
-def get_current_user(current_user):
-    return jsonify({
-        'id': current_user['_id'],
-        'username': current_user['username'],
-        'name': current_user['name'],
-        'email': current_user['email'],
-        'phone': current_user.get('phone', ''),
-        'id_card': current_user.get('id_card', ''),
-        'address': current_user.get('address', ''),
-        'date_of_birth': current_user.get('date_of_birth', ''),
-        'role': current_user['role'],
-        'created_at': current_user['created_at'],
-        'last_login': current_user['last_login']
-    }), 200
-
-# API Update profile
-@app.route('/api/auth/profile', methods=['PUT'])
-@token_required
-def update_profile(current_user):
-    data = request.get_json()
+def verify():
+    """Verify JWT token"""
+    auth_header = request.headers.get('Authorization') or request.headers.get('authorization')
     
-    update_data = {}
-    
-    # Allow updating specific fields
-    allowed_fields = ['name', 'email', 'phone', 'id_card', 'address', 'date_of_birth']
-    
-    for field in allowed_fields:
-        if field in data:
-            update_data[field] = data[field]
-            
-    if not update_data:
-        return jsonify({'message': 'Không có dữ liệu cập nhật!'}), 400
-        
-    update_data['updated_at'] = datetime.datetime.utcnow().isoformat()
+    if not auth_header:
+        return jsonify({'valid': False, 'message': 'Không có token!'}), 401
     
     try:
-        users_collection.update_one(
-            {'_id': current_user['_id']},
-            {'$set': update_data}
-        )
+        parts = auth_header.split()
+        if len(parts) != 2 or parts[0].lower() != 'bearer':
+            return jsonify({'valid': False, 'message': 'Token format sai!'}), 401
         
-        # Return updated user info
-        updated_user = users_collection.find_one({'_id': current_user['_id']})
+        token = parts[1]
+        data = jwt.decode(token, Config.JWT_SECRET, algorithms=['HS256'])
+        
+        user = users_collection.find_one({'_id': data.get('user_id')})
+        if not user:
+            return jsonify({'valid': False, 'message': 'User không tồn tại!'}), 401
         
         return jsonify({
-            'message': 'Cập nhật thông tin thành công!',
-            'user': {
-                'id': updated_user['_id'],
-                'username': updated_user['username'],
-                'name': updated_user['name'],
-                'email': updated_user['email'],
-                'phone': updated_user.get('phone', ''),
-                'id_card': updated_user.get('id_card', ''),
-                'address': updated_user.get('address', ''),
-                'date_of_birth': updated_user.get('date_of_birth', ''),
-                'role': updated_user['role']
-            }
+            'valid': True,
+            'user': format_user_response(user)
         }), 200
-    except Exception as e:
-        return jsonify({'message': f'Lỗi cập nhật: {str(e)}'}), 500
+        
+    except jwt.ExpiredSignatureError:
+        return jsonify({'valid': False, 'message': 'Token hết hạn!'}), 401
+    except jwt.InvalidTokenError:
+        return jsonify({'valid': False, 'message': 'Token không hợp lệ!'}), 401
 
-# API Đổi mật khẩu
+
 @app.route('/api/auth/change-password', methods=['PUT'])
-@token_required
-def change_password(current_user):
-    data = request.get_json()
+def change_password():
+    """Change password (requires valid token)"""
+    auth_header = request.headers.get('Authorization') or request.headers.get('authorization')
     
-    if 'old_password' not in data or 'new_password' not in data:
-        return jsonify({'message': 'Thiếu mật khẩu cũ hoặc mật khẩu mới!'}), 400
+    if not auth_header:
+        return jsonify({'message': 'Không có token!'}), 401
     
-    if not check_password_hash(current_user['password_hash'], data['old_password']):
+    try:
+        parts = auth_header.split()
+        token = parts[1] if len(parts) == 2 else parts[0]
+        data = jwt.decode(token, Config.JWT_SECRET, algorithms=['HS256'])
+        user_id = data.get('user_id')
+    except:
+        return jsonify({'message': 'Token không hợp lệ!'}), 401
+    
+    body = request.get_json() or {}
+    old_password = body.get('old_password')
+    new_password = body.get('new_password')
+    
+    if not old_password or not new_password:
+        return jsonify({'message': 'Thiếu mật khẩu cũ hoặc mới!'}), 400
+    
+    if len(new_password) < 6:
+        return jsonify({'message': 'Mật khẩu mới phải có ít nhất 6 ký tự!'}), 400
+    
+    user = users_collection.find_one({'_id': user_id})
+    if not user:
+        return jsonify({'message': 'User không tồn tại!'}), 404
+    
+    if not check_password_hash(user['password'], old_password):
         return jsonify({'message': 'Mật khẩu cũ không đúng!'}), 401
     
     users_collection.update_one(
-        {'_id': current_user['_id']},
-        {'$set': {'password_hash': generate_password_hash(data['new_password'])}}
+        {'_id': user_id},
+        {'$set': {
+            'password': generate_password_hash(new_password),
+            'updated_at': get_timestamp()
+        }}
     )
     
     return jsonify({'message': 'Đổi mật khẩu thành công!'}), 200
 
-# API register-tenant đã được tích hợp vào tenant-service
-# Tất cả users (kể cả tenant) đều được lưu trong users collection
 
-# API Lấy danh sách users (chỉ admin)
-@app.route('/api/auth/users', methods=['GET'])
-@token_required
-@admin_required
-def get_users(current_user):
-    users = list(users_collection.find({}, {'password_hash': 0}))
-    
-    # Convert ObjectId to string
-    for user in users:
-        if '_id' in user:
-            user['id'] = user['_id']
-    
-    return jsonify({'users': users}), 200
+# ============== Entry Point ==============
 
 if __name__ == '__main__':
-    import os
+    print(f"\n{'='*50}")
+    print(f"  {Config.SERVICE_NAME.upper()}")
+    print(f"  Port: {Config.SERVICE_PORT}")
+    print(f"{'='*50}\n")
+    
     register_service()
-    debug_mode = os.getenv('FLASK_DEBUG', 'false').lower() == 'true'
-    app.run(host='0.0.0.0', port=SERVICE_PORT, debug=debug_mode)
+    app.run(host='0.0.0.0', port=Config.SERVICE_PORT, debug=Config.DEBUG)

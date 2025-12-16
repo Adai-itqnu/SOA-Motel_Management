@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hóa đơn thanh toán - Admin</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: { extend: { colors: { primary: '#6366f1', secondary: '#8b5cf6' } } }
+        }
+    </script>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <div id="sidebarContainer"></div>
+
+    <main class="lg:ml-64 p-6">
+        <!-- Header -->
+        <div class="flex flex-col md:flex-row md:items-center md:justify-between mb-6">
+            <div>
+                <h1 class="text-2xl font-bold text-gray-800">Hóa đơn thanh toán</h1>
+                <p class="text-gray-500">Quản lý hóa đơn tiền phòng hàng tháng</p>
+            </div>
+            <div class="flex gap-2 mt-4 md:mt-0">
+                <button onclick="generateBills()" class="px-4 py-2 bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-lg font-medium hover:shadow-lg transition flex items-center gap-2">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
+                    </svg>
+                    Tạo hóa đơn tháng này
+                </button>
+                <button onclick="loadData()" class="px-4 py-2 bg-white text-gray-700 rounded-lg hover:bg-gray-50 transition">
+                    🔄 Làm mới
+                </button>
+            </div>
+        </div>
+
+        <!-- Stats -->
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+            <div class="bg-white rounded-xl shadow p-4">
+                <p class="text-sm text-gray-500">📝 Draft</p>
+                <p class="text-2xl font-bold text-gray-600" id="statDraft">0</p>
+            </div>
+            <div class="bg-white rounded-xl shadow p-4">
+                <p class="text-sm text-gray-500">⏳ Chờ thanh toán</p>
+                <p class="text-2xl font-bold text-amber-600" id="statPending">0</p>
+            </div>
+            <div class="bg-white rounded-xl shadow p-4">
+                <p class="text-sm text-gray-500">✅ Đã thanh toán</p>
+                <p class="text-2xl font-bold text-green-600" id="statPaid">0</p>
+            </div>
+            <div class="bg-white rounded-xl shadow p-4">
+                <p class="text-sm text-gray-500">💰 Tổng chưa thu</p>
+                <p class="text-xl font-bold text-red-600" id="statUnpaid">0 đ</p>
+            </div>
+        </div>
+
+        <!-- Filter -->
+        <div class="flex gap-2 mb-4 flex-wrap">
+            <button onclick="filterBills('all')" id="filterAll" class="px-3 py-1.5 bg-indigo-600 text-white rounded-lg text-sm">Tất cả</button>
+            <button onclick="filterBills('draft')" id="filterDraft" class="px-3 py-1.5 bg-white text-gray-600 rounded-lg text-sm hover:bg-gray-50">Draft</button>
+            <button onclick="filterBills('pending')" id="filterPending" class="px-3 py-1.5 bg-white text-gray-600 rounded-lg text-sm hover:bg-gray-50">Chờ TT</button>
+            <button onclick="filterBills('paid')" id="filterPaid" class="px-3 py-1.5 bg-white text-gray-600 rounded-lg text-sm hover:bg-gray-50">Đã TT</button>
+        </div>
+
+        <!-- Bills Table -->
+        <div class="bg-white rounded-xl shadow overflow-hidden">
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead class="bg-gray-50">
+                        <tr>
+                            <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase">Phòng</th>
+                            <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase">Người thuê</th>
+                            <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase">Tháng</th>
+                            <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase">Số ngày</th>
+                            <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase">Tiền phòng</th>
+                            <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase">Điện</th>
+                            <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase">Nước</th>
+                            <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase">Phí khác</th>
+                            <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase">Tổng</th>
+                            <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase">Trạng thái</th>
+                            <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase">Thao tác</th>
+                        </tr>
+                    </thead>
+                    <tbody id="billsTable" class="divide-y divide-gray-100">
+                        <tr><td colspan="11" class="px-4 py-8 text-center text-gray-400">Đang tải...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </main>
+
+    <!-- Finalize Modal -->
+    <div id="finalizeModal" class="hidden fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg">
+            <div class="p-5 border-b border-gray-100 flex items-center justify-between">
+                <h3 class="text-lg font-bold text-gray-800">Cập nhật hóa đơn</h3>
+                <button onclick="closeModal()" class="p-1 hover:bg-gray-100 rounded-lg">✕</button>
+            </div>
+            <form id="finalizeForm" onsubmit="submitFinalize(event)" class="p-5 space-y-4">
+                <input type="hidden" id="finalizeBillId">
+                <div class="bg-indigo-50 rounded-lg p-3 text-sm">
+                    <p>Phòng: <span id="modalRoom" class="font-bold">--</span> | Tháng: <span id="modalMonth" class="font-bold">--</span></p>
+                    <p>Số ngày tính: <span id="modalDays" class="font-bold text-indigo-600">--</span> ngày</p>
+                </div>
+                
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-medium text-gray-600 mb-1">Số điện cũ</label>
+                        <input type="number" id="electricOld" class="w-full px-3 py-2 border rounded-lg bg-gray-100 text-sm" readonly>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-gray-600 mb-1">Số điện mới *</label>
+                        <input type="number" id="electricNew" class="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-indigo-500" required>
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-medium text-gray-600 mb-1">Số nước cũ</label>
+                        <input type="number" id="waterOld" class="w-full px-3 py-2 border rounded-lg bg-gray-100 text-sm" readonly>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-gray-600 mb-1">Số nước mới *</label>
+                        <input type="number" id="waterNew" class="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-indigo-500" required>
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-gray-600 mb-1">Phí khác (VNĐ)</label>
+                    <input type="number" id="otherFee" value="0" class="w-full px-3 py-2 border rounded-lg text-sm">
+                </div>
+                <div class="flex gap-3 pt-2">
+                    <button type="button" onclick="closeModal()" class="flex-1 px-4 py-2 border text-gray-700 rounded-lg hover:bg-gray-50">Hủy</button>
+                    <button type="submit" class="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">Cập nhật & Gửi</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script src="/assets/js/common.js"></script>
+    <script src="/assets/js/admin/layout.js"></script>
+    <script>
+        let bills = [];
+        let roomsMap = {}, usersMap = {};
+        let currentFilter = 'all';
+
+        document.addEventListener('DOMContentLoaded', async () => {
+            if (typeof AdminLayout !== 'undefined') AdminLayout.init();
+            else if (!Auth.checkAuth('admin')) return;
+            await loadRooms();
+            await loadUsers();
+            await loadData();
+        });
+
+        async function loadRooms() {
+            try {
+                const res = await API.get('/rooms');
+                if (res.ok) (res.data.rooms || []).forEach(r => roomsMap[r._id] = r.name);
+            } catch(e) {}
+        }
+
+        async function loadUsers() {
+            try {
+                const res = await API.get('/users');
+                if (res.ok) (res.data.users || []).forEach(u => usersMap[u._id] = u.fullname || u.name || u.email);
+            } catch(e) {}
+        }
+
+        async function loadData() {
+            try {
+                const res = await API.get('/bills');
+                if (res.ok) {
+                    bills = res.data.bills || [];
+                    updateStats();
+                    renderBills();
+                }
+            } catch(e) { console.error(e); }
+        }
+
+        function updateStats() {
+            const draft = bills.filter(b => b.status === 'draft');
+            const pending = bills.filter(b => b.status === 'pending');
+            const paid = bills.filter(b => b.status === 'paid');
+            const unpaid = [...draft, ...pending].reduce((s, b) => s + (b.total || 0), 0);
+            
+            document.getElementById('statDraft').textContent = draft.length;
+            document.getElementById('statPending').textContent = pending.length;
+            document.getElementById('statPaid').textContent = paid.length;
+            document.getElementById('statUnpaid').textContent = formatCurrency(unpaid);
+        }
+
+        function filterBills(f) {
+            currentFilter = f;
+            ['All', 'Draft', 'Pending', 'Paid'].forEach(x => {
+                const btn = document.getElementById('filter' + x);
+                btn.className = x.toLowerCase() === f 
+                    ? 'px-3 py-1.5 bg-indigo-600 text-white rounded-lg text-sm'
+                    : 'px-3 py-1.5 bg-white text-gray-600 rounded-lg text-sm hover:bg-gray-50';
+            });
+            renderBills();
+        }
+
+        function renderBills() {
+            let data = currentFilter === 'all' ? bills : bills.filter(b => b.status === currentFilter);
+            if (!data.length) {
+                document.getElementById('billsTable').innerHTML = '<tr><td colspan="11" class="px-4 py-8 text-center text-gray-400">Không có hóa đơn</td></tr>';
+                return;
+            }
+            document.getElementById('billsTable').innerHTML = data.map(b => `
+                <tr class="hover:bg-gray-50">
+                    <td class="px-3 py-2 font-medium text-indigo-600">${roomsMap[b.room_id] || b.room_id || '--'}</td>
+                    <td class="px-3 py-2">${usersMap[b.user_id] || b.user_id || '--'}</td>
+                    <td class="px-3 py-2">${b.month}</td>
+                    <td class="px-3 py-2 text-center">${b.billing_days || 30}</td>
+                    <td class="px-3 py-2">${formatCurrency(b.room_fee)}</td>
+                    <td class="px-3 py-2">${b.electric_new !== null ? `${b.electric_old}→${b.electric_new} (${formatCurrency(b.electric_fee)})` : '<span class="text-gray-400">Chưa nhập</span>'}</td>
+                    <td class="px-3 py-2">${b.water_new !== null ? `${b.water_old}→${b.water_new} (${formatCurrency(b.water_fee)})` : '<span class="text-gray-400">Chưa nhập</span>'}</td>
+                    <td class="px-3 py-2">${formatCurrency(b.other_fee || 0)}</td>
+                    <td class="px-3 py-2 font-bold text-indigo-600">${formatCurrency(b.total)}</td>
+                    <td class="px-3 py-2">${statusBadge(b.status)}</td>
+                    <td class="px-3 py-2">
+                        ${b.status === 'draft' ? `<button onclick="openFinalize('${b._id}')" class="text-xs px-2 py-1 bg-indigo-100 text-indigo-700 rounded hover:bg-indigo-200">Nhập số</button>` : ''}
+                        ${b.status === 'pending' ? `<button onclick="markPaid('${b._id}')" class="text-xs px-2 py-1 bg-green-100 text-green-700 rounded hover:bg-green-200">Đã TT</button>` : ''}
+                        ${b.status === 'paid' ? '<span class="text-gray-400 text-xs">✓</span>' : ''}
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        async function generateBills() {
+            if (!confirm('Tạo hóa đơn tháng này cho tất cả hợp đồng đang active?\n\nLưu ý: Hóa đơn tháng đầu sẽ tính theo số ngày thực tế.')) return;
+            try {
+                const res = await API.post('/bills/generate-monthly', {});
+                if (res.ok) {
+                    alert('Tạo hóa đơn thành công!');
+                    loadData();
+                } else alert('Lỗi: ' + (res.data?.message || 'Không xác định'));
+            } catch(e) { alert('Lỗi kết nối'); }
+        }
+
+        function openFinalize(id) {
+            const bill = bills.find(b => b._id === id);
+            if (!bill) return;
+            document.getElementById('finalizeBillId').value = id;
+            document.getElementById('modalRoom').textContent = roomsMap[bill.room_id] || bill.room_id;
+            document.getElementById('modalMonth').textContent = bill.month;
+            document.getElementById('modalDays').textContent = bill.billing_days || 30;
+            document.getElementById('electricOld').value = bill.electric_old || 0;
+            document.getElementById('waterOld').value = bill.water_old || 0;
+            document.getElementById('electricNew').value = '';
+            document.getElementById('waterNew').value = '';
+            document.getElementById('otherFee').value = bill.other_fee || 0;
+            document.getElementById('finalizeModal').classList.remove('hidden');
+        }
+
+        function closeModal() {
+            document.getElementById('finalizeModal').classList.add('hidden');
+        }
+
+        async function submitFinalize(e) {
+            e.preventDefault();
+            const id = document.getElementById('finalizeBillId').value;
+            const data = {
+                electric_new: parseFloat(document.getElementById('electricNew').value),
+                water_new: parseFloat(document.getElementById('waterNew').value),
+                other_fee: parseFloat(document.getElementById('otherFee').value) || 0
+            };
+            try {
+                const res = await API.put(`/bills/${id}/finalize`, data);
+                if (res.ok) {
+                    closeModal();
+                    loadData();
+                } else alert('Lỗi: ' + (res.data?.message || 'Không xác định'));
+            } catch(e) { alert('Lỗi kết nối'); }
+        }
+
+        async function markPaid(id) {
+            if (!confirm('Xác nhận hóa đơn đã được thanh toán?')) return;
+            try {
+                const res = await API.put(`/bills/${id}/pay`, {});
+                if (res.ok) loadData();
+                else alert('Lỗi: ' + (res.data?.message || 'Không xác định'));
+            } catch(e) { alert('Lỗi kết nối'); }
+        }
+
+        function statusBadge(s) {
+            const badges = {
+                'draft': '<span class="px-2 py-0.5 bg-gray-100 text-gray-600 rounded text-xs">Draft</span>',
+                'pending': '<span class="px-2 py-0.5 bg-amber-100 text-amber-700 rounded text-xs">Chờ TT</span>',
+                'paid': '<span class="px-2 py-0.5 bg-green-100 text-green-700 rounded text-xs">Đã TT</span>'
+            };
+            return badges[s] || s;
+        }
+
+        function formatCurrency(n) {
+            return new Intl.NumberFormat('vi-VN').format(n || 0) + ' đ';
+        }
+    </script>
+</body>
+</html>

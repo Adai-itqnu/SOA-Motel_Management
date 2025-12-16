@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Phòng trống - Motel Management</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              primary: "#6366f1",
+              secondary: "#8b5cf6",
+            },
+          },
+        },
+      };
+    </script>
+  </head>
+  <body class="bg-gray-50 min-h-screen">
+    <!-- Header -->
+    <header class="bg-white shadow-sm sticky top-0 z-50">
+      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="flex items-center justify-between h-16">
+          <div class="flex items-center gap-3">
+            <div
+              class="w-10 h-10 bg-gradient-to-r from-indigo-500 to-purple-600 rounded-xl flex items-center justify-center"
+            >
+              <svg
+                class="w-6 h-6 text-white"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"
+                ></path>
+              </svg>
+            </div>
+            <span class="font-bold text-xl text-gray-800"
+              >Motel Management</span
+            >
+          </div>
+
+          <nav class="hidden md:flex items-center gap-6">
+            <a
+              href="./home.html"
+              class="text-gray-600 hover:text-indigo-600 transition-colors"
+              >Trang chủ</a
+            >
+            <a href="./rooms.html" class="text-indigo-600 font-semibold"
+              >Phòng trọ</a
+            >
+            <a
+              href="./bookings.html"
+              class="text-gray-600 hover:text-indigo-600 transition-colors"
+              >Thanh toán</a
+            >
+          </nav>
+
+          <div class="flex items-center gap-4 relative">
+            <div class="relative">
+              <button
+                id="notifBell"
+                class="flex items-center justify-center size-10 rounded-full border border-gray-200 bg-gray-50 hover:bg-gray-100 transition"
+                aria-label="Thông báo"
+              >
+                <span
+                  class="material-symbols-outlined text-[20px] text-gray-700"
+                  >notifications</span
+                >
+                <span
+                  id="notifBadge"
+                  class="hidden absolute -top-1 -right-1 rounded-full bg-primary text-white text-[10px] font-bold px-1.5 py-0.5"
+                ></span>
+              </button>
+              <div
+                id="notifDropdown"
+                class="hidden absolute right-0 top-12 w-72 bg-white border border-gray-100 rounded-xl shadow-2xl z-50"
+              >
+                <div
+                  class="flex items-center justify-between px-4 py-3 border-b border-gray-100"
+                >
+                  <span class="font-semibold text-gray-900">Thông báo</span>
+                  <span class="text-xs text-gray-500">Chưa có thông báo</span>
+                </div>
+                <div id="notifList" class="max-h-80 overflow-y-auto"></div>
+              </div>
+            </div>
+            <button
+              id="userMenuButton"
+              type="button"
+              class="flex items-center gap-2 rounded-xl hover:bg-gray-50 px-2 py-1 transition"
+              aria-haspopup="dialog"
+              aria-controls="userActionsModal"
+              title="Tài khoản"
+            >
+              <div
+                class="w-10 h-10 bg-gradient-to-r from-indigo-500 to-purple-600 rounded-full flex items-center justify-center text-white font-bold"
+                id="userAvatar"
+              >
+                U
+              </div>
+              <div class="hidden sm:block text-left">
+                <p class="font-semibold text-gray-800 text-sm" id="userName">
+                  User
+                </p>
+                <p class="text-xs text-gray-500">Người thuê</p>
+              </div>
+            </button>
+            <button
+              onclick="logout()"
+              class="text-red-500 hover:text-red-700 transition-colors p-2"
+              title="Đăng xuất"
+            >
+              <svg
+                class="w-5 h-5"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"
+                ></path>
+              </svg>
+            </button>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <div class="bg-white rounded-2xl shadow-lg p-6 mb-6">
+        <div
+          class="flex items-start sm:items-center justify-between gap-4 flex-col sm:flex-row"
+        >
+          <div>
+            <h1 class="text-2xl font-bold text-gray-800">Phòng trống</h1>
+            <p class="text-gray-500">
+              Chọn phòng và thanh toán cọc để giữ phòng ngay.
+            </p>
+          </div>
+          <a
+            href="./bookings.html"
+            class="inline-flex items-center px-4 py-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors"
+          >
+            Xem lịch sử thanh toán
+          </a>
+        </div>
+      </div>
+
+      <div id="vnpayNotice" class="hidden"></div>
+
+      <div
+        id="myReserved"
+        class="hidden bg-white rounded-2xl shadow-lg p-6 mb-6"
+      >
+        <h2 class="text-xl font-bold text-gray-800 mb-2">Phòng bạn đang giữ</h2>
+        <p class="text-gray-500 mb-4">
+          Các phòng đã thanh toán cọc/đang chờ xác minh.
+        </p>
+        <div
+          id="myReservedList"
+          class="grid grid-cols-1 md:grid-cols-2 gap-4"
+        ></div>
+      </div>
+
+      <div
+        id="roomsError"
+        class="hidden mb-6 p-4 rounded-xl bg-red-50 text-red-700"
+      >
+        <span>Đã có lỗi xảy ra</span>
+      </div>
+
+      <div id="roomsLoading" class="bg-white rounded-2xl shadow-lg p-6">
+        <p class="text-gray-500">Đang tải danh sách phòng...</p>
+      </div>
+
+      <div id="roomsEmpty" class="hidden bg-white rounded-2xl shadow-lg p-6">
+        <p class="text-gray-500">Hiện không có phòng trống.</p>
+      </div>
+
+      <div
+        id="roomsGrid"
+        class="hidden grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
+      ></div>
+    </main>
+
+    <!-- User Actions Modal (Avatar Menu) -->
+    <div
+      id="userActionsModal"
+      class="hidden fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+    >
+      <div class="bg-white rounded-2xl shadow-2xl w-full max-w-sm">
+        <div
+          class="p-5 border-b border-gray-100 flex items-center justify-between"
+        >
+          <div>
+            <div class="text-lg font-bold text-gray-800">Tài khoản</div>
+            <div class="text-sm text-gray-500">Chọn thao tác</div>
+          </div>
+          <button
+            id="userActionsClose"
+            class="p-2 hover:bg-gray-100 rounded-lg"
+            aria-label="Đóng"
+            type="button"
+          >
+            <svg
+              class="w-5 h-5 text-gray-500"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M6 18L18 6M6 6l12 12"
+              ></path>
+            </svg>
+          </button>
+        </div>
+        <div class="p-5 space-y-3">
+          <button
+            id="userActionsEditProfile"
+            type="button"
+            class="w-full px-4 py-3 bg-indigo-600 text-white rounded-xl font-semibold hover:bg-indigo-700"
+          >
+            Chỉnh sửa thông tin
+          </button>
+          <button
+            id="userActionsBills"
+            type="button"
+            class="w-full px-4 py-3 border border-gray-200 rounded-xl font-semibold text-gray-800 hover:bg-gray-50"
+          >
+            Thanh toán hóa đơn hàng tháng
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Room Detail Modal -->
+    <div
+      id="roomDetailModal"
+      class="hidden fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+    >
+      <div
+        class="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto"
+      >
+        <div class="p-6 border-b border-gray-100">
+          <div class="flex items-start justify-between gap-4">
+            <div>
+              <h3 id="roomDetailTitle" class="text-xl font-bold text-gray-800">
+                Chi tiết phòng
+              </h3>
+              <p id="roomDetailSubtitle" class="text-sm text-gray-500 mt-1">
+                --
+              </p>
+            </div>
+            <button
+              id="roomDetailClose"
+              class="p-2 hover:bg-gray-100 rounded-lg"
+              aria-label="Đóng"
+              type="button"
+            >
+              <svg
+                class="w-5 h-5 text-gray-500"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M6 18L18 6M6 6l12 12"
+                ></path>
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <div class="p-6 space-y-6">
+          <div class="relative bg-gray-50 rounded-2xl overflow-hidden">
+            <img
+              id="roomDetailImage"
+              alt="Room image"
+              class="w-full h-80 object-cover"
+            />
+            <button
+              id="roomDetailPrev"
+              type="button"
+              class="absolute left-3 top-1/2 -translate-y-1/2 p-3 bg-white/80 hover:bg-white rounded-full shadow"
+              aria-label="Ảnh trước"
+            >
+              <svg
+                class="w-5 h-5 text-gray-700"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M15 19l-7-7 7-7"
+                ></path>
+              </svg>
+            </button>
+            <button
+              id="roomDetailNext"
+              type="button"
+              class="absolute right-3 top-1/2 -translate-y-1/2 p-3 bg-white/80 hover:bg-white rounded-full shadow"
+              aria-label="Ảnh sau"
+            >
+              <svg
+                class="w-5 h-5 text-gray-700"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M9 5l7 7-7 7"
+                ></path>
+              </svg>
+            </button>
+            <div
+              id="roomDetailImageEmpty"
+              class="hidden absolute inset-0 flex items-center justify-center text-gray-500"
+            >
+              Không có ảnh
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+            <div class="bg-gray-50 rounded-xl p-4">
+              <div class="text-gray-500">Giá thuê/tháng</div>
+              <div id="roomDetailPrice" class="font-semibold text-indigo-600">
+                --
+              </div>
+            </div>
+            <div class="bg-gray-50 rounded-xl p-4">
+              <div class="text-gray-500">Tiền cọc</div>
+              <div id="roomDetailDeposit" class="font-semibold text-gray-800">
+                --
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <div class="text-sm font-semibold text-gray-800 mb-2">Tiện ích</div>
+            <div id="roomDetailAmenities" class="flex flex-wrap gap-2"></div>
+          </div>
+
+          <div>
+            <div class="text-sm font-semibold text-gray-800 mb-2">Mô tả</div>
+            <div id="roomDetailDescription" class="text-sm text-gray-600">
+              --
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script src="/assets/js/common.js"></script>
+    <script src="/assets/js/user/layout.js"></script>
+    <script src="/assets/js/user/menu.js"></script>
+    <script src="/assets/js/user/rooms.js"></script>
+  </body>
+</html>

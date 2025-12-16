@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="vi" class="light">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title id="pageTitle">MotelHDK</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800;900&display=swap"
+      rel="stylesheet"
+    />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap"
+    />
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <script>
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              primary: "#ea2a33",
+              "primary-hover": "#d41f27",
+              "bg-soft": "#f8f6f6",
+              surface: "#ffffff",
+            },
+            fontFamily: {
+              display: ["Be Vietnam Pro", "sans-serif"],
+              body: ["Be Vietnam Pro", "sans-serif"],
+            },
+            boxShadow: {
+              card: "0 15px 50px rgba(16,24,40,0.08)",
+              glow: "0 20px 45px rgba(234,42,51,0.22)",
+            },
+          },
+        },
+      };
+    </script>
+    <style>
+      body {
+        font-family: "Be Vietnam Pro", sans-serif;
+        background: #f8f6f6;
+      }
+      ::-webkit-scrollbar {
+        width: 8px;
+      }
+      ::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: #cbd5e1;
+        border-radius: 4px;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: #94a3b8;
+      }
+      .dropdown-menu {
+        opacity: 0;
+        visibility: hidden;
+        transform: translateY(-6px);
+        transition: all 0.18s ease;
+      }
+      .dropdown-menu.show {
+        opacity: 1;
+        visibility: visible;
+        transform: translateY(0);
+      }
+      .nav-tab.active {
+        background: #ea2a33;
+        color: #fff;
+      }
+      .shadow-glow {
+        box-shadow: 0 20px 45px rgba(234, 42, 51, 0.22);
+      }
+      .shadow-card {
+        box-shadow: 0 15px 50px rgba(16, 24, 40, 0.08);
+      }
+    </style>
+  </head>
+  <body
+    class="bg-bg-soft text-gray-900 font-display min-h-screen flex flex-col"
+  >
+    <!-- Header -->
+    <header
+      id="layoutHeader"
+      class="sticky top-0 z-40 w-full bg-white/90 backdrop-blur-md border-b border-gray-100 shadow-sm"
+    >
+      <div class="max-w-[1280px] mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="flex h-16 items-center justify-between gap-4">
+          <!-- Logo -->
+          <a href="/user/home.html" class="flex items-center gap-2">
+            <div
+              class="size-9 bg-primary rounded-xl flex items-center justify-center text-white shadow-glow"
+            >
+              <span class="material-symbols-outlined">apartment</span>
+            </div>
+            <span
+              class="text-lg font-bold tracking-tight text-gray-900 hidden sm:block"
+              >MotelHDK</span
+            >
+          </a>
+
+          <!-- Nav Tabs -->
+          <nav
+            id="navTabs"
+            class="hidden md:flex items-center gap-1 text-sm font-semibold"
+          >
+            <a
+              href="/user/home.html"
+              data-nav="home"
+              class="nav-link px-4 py-2 rounded-lg text-gray-600 hover:bg-gray-100 flex items-center gap-2"
+            >
+              <span class="material-symbols-outlined text-[20px]">home</span>
+              Trang chủ
+            </a>
+            <a
+              href="/user/my-room.html"
+              data-nav="my-room"
+              class="nav-link px-4 py-2 rounded-lg text-gray-600 hover:bg-gray-100 flex items-center gap-2"
+            >
+              <span class="material-symbols-outlined text-[20px]"
+                >meeting_room</span
+              >
+              Phòng của tôi
+            </a>
+            <a
+              href="/user/bills.html"
+              data-nav="bills"
+              class="nav-link px-4 py-2 rounded-lg text-gray-600 hover:bg-gray-100 flex items-center gap-2"
+            >
+              <span class="material-symbols-outlined text-[20px]"
+                >receipt_long</span
+              >
+              Hóa đơn
+            </a>
+          </nav>
+
+          <!-- User Menu + Notifications -->
+          <div class="flex items-center gap-3">
+            <!-- Notification Bell -->
+            <div class="relative">
+              <button
+                id="notifBell"
+                class="flex items-center justify-center size-10 rounded-full border border-gray-200 bg-gray-50 hover:bg-gray-100 transition"
+                aria-label="Thông báo"
+              >
+                <span
+                  class="material-symbols-outlined text-[20px] text-gray-700"
+                  >notifications</span
+                >
+              </button>
+              <span
+                id="notifBadge"
+                class="hidden absolute -top-1 -right-1 rounded-full bg-primary text-white text-[10px] font-bold px-1.5 py-0.5 min-w-[18px] text-center"
+              ></span>
+              <div
+                id="notifDropdown"
+                class="dropdown-menu absolute right-0 top-12 w-72 bg-white border border-gray-100 rounded-xl shadow-2xl z-50"
+              >
+                <div
+                  class="flex items-center justify-between px-4 py-3 border-b border-gray-100"
+                >
+                  <span class="font-semibold text-gray-900">Thông báo</span>
+                  <span id="notifStatus" class="text-xs text-gray-500"
+                    >Chưa có thông báo</span
+                  >
+                </div>
+                <div id="notifList" class="max-h-80 overflow-y-auto"></div>
+              </div>
+            </div>
+
+            <!-- User Menu -->
+            <div class="relative">
+              <button
+                id="userMenuBtn"
+                class="flex items-center gap-2 p-1.5 pr-3 rounded-full border border-gray-200 bg-gray-50 hover:bg-gray-100 transition"
+              >
+                <div
+                  id="userAvatar"
+                  class="size-9 rounded-full bg-primary text-white font-bold flex items-center justify-center"
+                >
+                  U
+                </div>
+                <div class="hidden sm:block text-left">
+                  <p id="userName" class="text-sm font-semibold text-gray-900">
+                    User
+                  </p>
+                  <p class="text-xs text-gray-500">Người thuê</p>
+                </div>
+                <span
+                  class="material-symbols-outlined text-gray-500 text-[18px] hidden sm:block"
+                  >expand_more</span
+                >
+              </button>
+              <div
+                id="userDropdown"
+                class="dropdown-menu absolute right-0 top-full mt-2 w-64 bg-white rounded-xl shadow-2xl border border-gray-100 py-2 z-50"
+              >
+                <div class="px-4 py-3 border-b border-gray-100">
+                  <p id="dropdownName" class="font-semibold text-gray-900">
+                    User
+                  </p>
+                  <p id="dropdownEmail" class="text-sm text-gray-500">
+                    email@example.com
+                  </p>
+                </div>
+                <div class="py-2">
+                  <a
+                    href="/user/profile.html"
+                    class="flex items-center gap-3 px-4 py-2.5 text-gray-700 hover:bg-gray-50 transition"
+                  >
+                    <span class="material-symbols-outlined text-gray-400"
+                      >account_circle</span
+                    >
+                    Thông tin cá nhân
+                  </a>
+                  <a
+                    href="/user/bills.html"
+                    class="flex items-center gap-3 px-4 py-2.5 text-gray-700 hover:bg-gray-50 transition"
+                  >
+                    <span class="material-symbols-outlined text-gray-400"
+                      >history</span
+                    >
+                    Lịch sử thanh toán
+                  </a>
+                  <a
+                    href="/user/my-room.html"
+                    class="flex items-center gap-3 px-4 py-2.5 text-gray-700 hover:bg-gray-50 transition"
+                  >
+                    <span class="material-symbols-outlined text-gray-400"
+                      >meeting_room</span
+                    >
+                    Phòng của tôi
+                  </a>
+                </div>
+                <div class="border-t border-gray-100 pt-2">
+                  <button
+                    id="logoutBtn"
+                    class="flex items-center gap-3 px-4 py-2.5 text-red-600 hover:bg-red-50 w-full transition"
+                  >
+                    <span class="material-symbols-outlined">logout</span>
+                    Đăng xuất
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Mobile Menu Toggle -->
+            <button
+              id="mobileMenuBtn"
+              class="md:hidden flex items-center justify-center size-10 rounded-lg border border-gray-200 bg-gray-50 hover:bg-gray-100"
+            >
+              <span class="material-symbols-outlined">menu</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Mobile Navigation -->
+        <div id="mobileNav" class="hidden md:hidden pb-4">
+          <nav class="flex flex-col gap-1 text-sm font-semibold">
+            <a
+              href="/user/home.html"
+              data-nav="home"
+              class="nav-link px-4 py-3 rounded-lg text-gray-600 hover:bg-gray-100 flex items-center gap-2"
+            >
+              <span class="material-symbols-outlined text-[20px]">home</span>
+              Trang chủ
+            </a>
+            <a
+              href="/user/my-room.html"
+              data-nav="my-room"
+              class="nav-link px-4 py-3 rounded-lg text-gray-600 hover:bg-gray-100 flex items-center gap-2"
+            >
+              <span class="material-symbols-outlined text-[20px]"
+                >meeting_room</span
+              >
+              Phòng của tôi
+            </a>
+            <a
+              href="/user/bills.html"
+              data-nav="bills"
+              class="nav-link px-4 py-3 rounded-lg text-gray-600 hover:bg-gray-100 flex items-center gap-2"
+            >
+              <span class="material-symbols-outlined text-[20px]"
+                >receipt_long</span
+              >
+              Hóa đơn
+            </a>
+          </nav>
+        </div>
+      </div>
+    </header>
+
+    <!-- Main Content Slot -->
+    <main
+      id="layoutMain"
+      class="flex-1 max-w-[1280px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-8"
+    >
+      <!-- Page content will be loaded here -->
+    </main>
+
+    <!-- Footer -->
+    <footer id="layoutFooter" class="bg-[#1b0e0e] text-white mt-auto">
+      <div class="max-w-7xl mx-auto px-4 md:px-10 py-12">
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-8 mb-8">
+          <div class="col-span-1 md:col-span-1">
+            <div class="flex items-center gap-2 mb-4">
+              <div
+                class="text-white size-6 flex items-center justify-center bg-white/10 rounded"
+              >
+                <span class="material-symbols-outlined text-lg">apartment</span>
+              </div>
+              <h3 class="font-bold text-lg">Motel Management</h3>
+            </div>
+            <p class="text-gray-400 text-sm leading-relaxed">
+              Hệ thống quản lý phòng trọ thông minh, tiện lợi cho cả chủ nhà và
+              người thuê.
+            </p>
+          </div>
+          <div>
+            <h4 class="font-bold text-base mb-4">Liên kết</h4>
+            <ul class="space-y-2 text-sm text-gray-400">
+              <li>
+                <a class="hover:text-primary transition-colors" href="#"
+                  >Về chúng tôi</a
+                >
+              </li>
+              <li>
+                <a class="hover:text-primary transition-colors" href="#"
+                  >Bảng giá dịch vụ</a
+                >
+              </li>
+              <li>
+                <a class="hover:text-primary transition-colors" href="#"
+                  >Tin tức</a
+                >
+              </li>
+            </ul>
+          </div>
+          <div>
+            <h4 class="font-bold text-base mb-4">Hỗ trợ</h4>
+            <ul class="space-y-2 text-sm text-gray-400">
+              <li>
+                <a class="hover:text-primary transition-colors" href="#"
+                  >Trung tâm trợ giúp</a
+                >
+              </li>
+              <li>
+                <a class="hover:text-primary transition-colors" href="#"
+                  >Quy định & Chính sách</a
+                >
+              </li>
+              <li>
+                <a class="hover:text-primary transition-colors" href="#"
+                  >Bảo mật thông tin</a
+                >
+              </li>
+            </ul>
+          </div>
+          <div>
+            <h4 class="font-bold text-base mb-4">Liên hệ</h4>
+            <ul class="space-y-2 text-sm text-gray-400">
+              <li class="flex items-center gap-2">
+                <span class="material-symbols-outlined text-[16px]">call</span>
+                0832 150 522
+              </li>
+              <li class="flex items-center gap-2">
+                <span class="material-symbols-outlined text-[16px]">mail</span>
+                support@motel.com
+              </li>
+            </ul>
+          </div>
+        </div>
+        <div
+          class="border-t border-gray-800 pt-8 flex flex-col md:flex-row justify-between items-center gap-4"
+        >
+          <p class="text-sm text-gray-500">
+            © 2024 Motel Management System. All rights reserved.
+          </p>
+          <span class="text-gray-600">ver 1.0.0</span>
+        </div>
+      </div>
+    </footer>
+  </body>
+</html>

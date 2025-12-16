@@ -1,23 +1,31 @@
-from pymongo import MongoClient
-from config import MONGO_URI, DB_NAME, COLLECTION_NAME
+"""Notification Service Database Models"""
+from pymongo import MongoClient, ASCENDING, DESCENDING
+from config import Config
 
-# MongoDB connection
-client = MongoClient(MONGO_URI)
-db = client[DB_NAME]
-notifications_collection = db[COLLECTION_NAME]
+class Database:
+    _instance = None
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+            cls._client = MongoClient(Config.MONGO_URI)
+            cls._db = cls._client[Config.DB_NAME]
+        return cls._instance
+    
+    @property
+    def notifications(self):
+        return self._db[Config.COLLECTION_NAME]
 
-# Useful indexes
-notifications_collection.create_index('user_id')
-notifications_collection.create_index('status')
-notifications_collection.create_index('type')
-notifications_collection.create_index('metadata.bill_id')
+_database = Database()
+notifications_collection = _database.notifications
 
-def get_notifications_collection():
-    return notifications_collection
+def init_indexes():
+    try:
+        notifications_collection.create_index([('user_id', ASCENDING)])
+        notifications_collection.create_index([('status', ASCENDING)])
+        notifications_collection.create_index([('created_at', DESCENDING)])
+        notifications_collection.create_index([('type', ASCENDING)])
+        print("[DB] ✓ Notification indexes created")
+    except Exception as e:
+        print(f"[DB] Index: {e}")
 
-def get_db():
-    return db
-
-def get_client():
-    return client
-
+init_indexes()

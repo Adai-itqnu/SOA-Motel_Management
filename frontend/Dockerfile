@@ -1,12 +1,17 @@
-FROM python:3.11-slim
+# Use nginx:alpine to serve static files
+FROM nginx:alpine
 
-WORKDIR /app
+# Copy frontend files
+COPY . /usr/share/nginx/html
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Remove Dockerfile and nginx.conf from html folder
+RUN rm -f /usr/share/nginx/html/Dockerfile /usr/share/nginx/html/nginx.conf
 
-COPY . .
+# Copy nginx configuration
+COPY nginx.conf /etc/nginx/conf.d/default.conf
 
-EXPOSE 5000
+# Expose port 3000
+EXPOSE 3000
 
-CMD ["python", "app.py"]
+# Start nginx
+CMD ["nginx", "-g", "daemon off;"]

@@ -1,233 +1,275 @@
+"""
+Room Service - Main Application
+Handles room management operations
+"""
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-import datetime
-import uuid
-import jwt
-from functools import wraps
-from config import JWT_SECRET, SERVICE_NAME, SERVICE_PORT, INTERNAL_API_KEY
-from model import rooms_collection
-from service_registry import register_service
+import atexit
+import base64
 
+from config import Config
+from model import rooms_collection
+from decorators import token_required, admin_required, internal_api_required
+from utils import (
+    generate_room_id,
+    get_timestamp,
+    format_room_response,
+    check_duplicate_room_name
+)
+from service_registry import register_service, deregister_service
+
+
+# Initialize Flask app
 app = Flask(__name__)
+app.config.from_object(Config)
 CORS(app)
 
-# Allowed statuses (including reserved hold state)
-ALLOWED_ROOM_STATUSES = {'available', 'occupied', 'maintenance', 'reserved'}
+# Register cleanup on exit
+atexit.register(deregister_service)
 
-# Load configuration
-app.config['SECRET_KEY'] = JWT_SECRET
-app.config['SERVICE_NAME'] = SERVICE_NAME
-app.config['SERVICE_PORT'] = SERVICE_PORT
 
-# Decorator xác thực token
-def token_required(f):
-    @wraps(f)
-    def decorated(*args, **kwargs):
-        # Try both 'Authorization' and 'authorization' (nginx may lowercase headers)
-        token = request.headers.get('Authorization') or request.headers.get('authorization')
-        
-        if not token:
-            return jsonify({'message': 'Token không tồn tại!'}), 401
-        
-        try:
-            if token.startswith('Bearer '):
-                token = token[7:]
-            elif token.startswith('bearer '):
-                token = token[7:]
-            
-            data = jwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'])
-            current_user = data
-            
-        except jwt.ExpiredSignatureError:
-            return jsonify({'message': 'Token đã hết hạn!'}), 401
-        except jwt.InvalidTokenError:
-            return jsonify({'message': 'Token không hợp lệ!'}), 401
-        
-        return f(current_user, *args, **kwargs)
-    
-    return decorated
+# ============== Health Check ==============
 
-# Decorator kiểm tra quyền admin
-def admin_required(f):
-    @wraps(f)
-    def decorated(current_user, *args, **kwargs):
-        if current_user.get('role') != 'admin':
-            return jsonify({'message': 'Yêu cầu quyền admin!'}), 403
-        return f(current_user, *args, **kwargs)
-    return decorated
-
-def internal_api_required(f):
-    @wraps(f)
-    def decorated(*args, **kwargs):
-        token = request.headers.get('X-Internal-Api-Key')
-        if not token or token != INTERNAL_API_KEY:
-            return jsonify({'message': 'Unauthorized internal request'}), 403
-        return f(*args, **kwargs)
-    return decorated
-
-# Health check endpoint
 @app.route('/health', methods=['GET'])
 def health_check():
-    return jsonify({'status': 'healthy', 'service': app.config['SERVICE_NAME']}), 200
+    """Health check endpoint"""
+    return jsonify({
+        'status': 'healthy',
+        'service': Config.SERVICE_NAME,
+        'timestamp': get_timestamp()
+    }), 200
 
-# API Lấy danh sách phòng
+
+# ============== Public APIs ==============
+
 @app.route('/api/rooms', methods=['GET'])
 def get_rooms():
+    """Get list of rooms with optional filters"""
     status_filter = request.args.get('status')
     search = request.args.get('search')
     
     query = {}
     
-    # Filter theo status
-    if status_filter:
+    if status_filter and status_filter in Config.ALLOWED_STATUSES:
         query['status'] = status_filter
     
-    # Search theo tên phòng
     if search:
         query['name'] = {'$regex': search, '$options': 'i'}
     
     rooms = list(rooms_collection.find(query).sort('name', 1))
     
-    # Convert ObjectId
-    for room in rooms:
-        room['id'] = room['_id']
-    
-    return jsonify({'rooms': rooms, 'total': len(rooms)}), 200
+    return jsonify({
+        'rooms': [format_room_response(r) for r in rooms],
+        'total': len(rooms)
+    }), 200
 
-# API Lấy chi tiết phòng
+
 @app.route('/api/rooms/<room_id>', methods=['GET'])
 def get_room(room_id):
+    """Get room details by ID"""
     room = rooms_collection.find_one({'_id': room_id})
     
     if not room:
         return jsonify({'message': 'Phòng không tồn tại!'}), 404
     
-    room['id'] = room['_id']
-    # Đảm bảo có các trường mới (backward compatibility)
-    if 'deposit' not in room:
-        room['deposit'] = 0
-    if 'payment_day' not in room:
-        room['payment_day'] = 5
-    if 'electric_price' not in room:
-        room['electric_price'] = 3500
-    if 'water_price' not in room:
-        room['water_price'] = 20000
-    return jsonify(room), 200
+    return jsonify(format_room_response(room)), 200
 
-# API Tạo phòng mới (Admin only)
+
+@app.route('/api/rooms/available', methods=['GET'])
+def get_available_rooms():
+    """Get list of available rooms (for users)"""
+    rooms = list(rooms_collection.find({
+        'status': Config.STATUS_AVAILABLE
+    }).sort('price', 1))
+    
+    # Don't include sensitive data for public endpoint
+    return jsonify({
+        'rooms': [format_room_response(r, include_sensitive=False) for r in rooms],
+        'total': len(rooms)
+    }), 200
+
+
+@app.route('/api/rooms/public/<room_id>', methods=['GET'])
+def get_public_room_detail(room_id):
+    """Get room detail for user UI with full images but no sensitive fields."""
+    room = rooms_collection.find_one({'_id': room_id})
+    if not room:
+        return jsonify({'message': 'Phòng không tồn tại!'}), 404
+
+    data = format_room_response(room, include_sensitive=False)
+    images = room.get('images') or []
+    if not isinstance(images, list):
+        images = []
+    data['images'] = images
+    return jsonify(data), 200
+
+
+# ============== Admin APIs ==============
+
 @app.route('/api/rooms', methods=['POST'])
 @token_required
 @admin_required
 def create_room(current_user):
-    data = request.get_json()
+    """Create a new room (admin only)"""
+    data = request.get_json() or {}
     
-    # Validation
+    # Validate required fields
     required_fields = ['name', 'price', 'room_type']
-    for field in required_fields:
-        if field not in data:
-            return jsonify({'message': f'Thiếu trường {field}!'}), 400
+    missing = [f for f in required_fields if not data.get(f)]
+    if missing:
+        return jsonify({'message': f"Thiếu trường: {', '.join(missing)}"}), 400
     
-    # Kiểm tra tên phòng đã tồn tại
-    if rooms_collection.find_one({'name': data['name']}):
+    # Check duplicate name
+    if check_duplicate_room_name(data['name']):
         return jsonify({'message': 'Tên phòng đã tồn tại!'}), 400
     
-    # Tạo room_id sử dụng UUID (thread-safe)
-    room_id = f"R{uuid.uuid4().hex[:8].upper()}"
-    
-    # Đảm bảo room_id không trùng (retry nếu cần)
-    while rooms_collection.find_one({'_id': room_id}):
-        room_id = f"R{uuid.uuid4().hex[:8].upper()}"
-    
-    # Tạo phòng mới
+    # Create room document
+    timestamp = get_timestamp()
+
+    amenities = data.get('amenities') or []
+    if isinstance(amenities, str):
+        amenities = [a.strip() for a in amenities.split(',') if a.strip()]
+    if not isinstance(amenities, list):
+        amenities = []
+
+    images = data.get('images') or []
+    if not isinstance(images, list):
+        images = []
+    # Normalize images to a safe structure (base64 string only)
+    normalized_images = []
+    for img in images:
+        if not isinstance(img, dict):
+            continue
+        content_type = (img.get('content_type') or 'image/jpeg').strip()
+        filename = (img.get('filename') or '').strip()
+        data_b64 = img.get('data_b64') or img.get('data')
+        if not data_b64:
+            continue
+        # Validate base64 payload (best-effort)
+        try:
+            base64.b64decode(str(data_b64), validate=True)
+        except Exception:
+            continue
+        normalized_images.append({'filename': filename, 'content_type': content_type, 'data_b64': str(data_b64)})
+
     new_room = {
-        '_id': room_id,
+        '_id': generate_room_id(),
         'name': data['name'],
-        'price': float(data['price']),
-        'status': 'available',  # available | occupied | maintenance | reserved
-        'tenant_id': None,
-        'electric_meter': data.get('electric_meter', 0),
-        'water_meter': data.get('water_meter', 0),
         'room_type': data['room_type'],
+        'price': float(data['price']),
+        'deposit': float(data.get('deposit', 0)),
+        'electricity_price': float(data.get('electricity_price') or data.get('electric_price', Config.DEFAULT_ELECTRIC_PRICE)),
+        'water_price': float(data.get('water_price', Config.DEFAULT_WATER_PRICE)),
         'description': data.get('description', ''),
-        'deposit': float(data.get('deposit', 0)),  # Tiền cọc
-        'payment_day': int(data.get('payment_day', 5)),  # Ngày thanh toán hàng tháng
-        'electric_price': float(data.get('electric_price', 3500)),  # Giá điện
-        'water_price': float(data.get('water_price', 20000)),  # Giá nước
-        'created_at': datetime.datetime.utcnow().isoformat(),
-        'updated_at': datetime.datetime.utcnow().isoformat()
+        'area': float(data.get('area') or data.get('area_m2', 0) or 0),
+        'floor': int(data.get('floor', 1) or 1),
+        'amenities': amenities,
+        'images': normalized_images,
+        'status': Config.STATUS_AVAILABLE,
+        'current_contract_id': None,
+        'reserved_by_tenant_id': None,
+        'reserved_payment_id': None,
+        'reservation_status': None,
+        'reserved_at': None,
+        'created_at': timestamp,
+        'updated_at': timestamp
     }
     
     try:
         rooms_collection.insert_one(new_room)
-        new_room['id'] = new_room['_id']
         return jsonify({
             'message': 'Tạo phòng thành công!',
-            'room': new_room
+            'room': format_room_response(new_room)
         }), 201
     except Exception as e:
         return jsonify({'message': f'Lỗi tạo phòng: {str(e)}'}), 500
 
-# API Cập nhật phòng (Admin only)
+
 @app.route('/api/rooms/<room_id>', methods=['PUT'])
 @token_required
 @admin_required
 def update_room(current_user, room_id):
-    data = request.get_json()
+    """Update room information (admin only)"""
+    data = request.get_json() or {}
     
     room = rooms_collection.find_one({'_id': room_id})
     if not room:
         return jsonify({'message': 'Phòng không tồn tại!'}), 404
     
-    # Kiểm tra tên phòng trùng (nếu đổi tên)
-    if 'name' in data and data['name'] != room['name']:
-        if rooms_collection.find_one({'name': data['name']}):
+    # Check duplicate name if changing
+    if data.get('name') and data['name'] != room['name']:
+        if check_duplicate_room_name(data['name'], room_id):
             return jsonify({'message': 'Tên phòng đã tồn tại!'}), 400
     
-    # Cập nhật các trường
-    update_fields = {}
-    allowed_fields = ['name', 'price', 'status', 'electric_meter', 'water_meter', 
-                     'room_type', 'description', 'tenant_id', 'deposit', 
-                     'payment_day', 'electric_price', 'water_price']
+    # Build update fields
+    allowed_fields = [
+        'name', 'price', 'status', 'room_type', 'description',
+        'deposit', 'electricity_price', 'electric_price', 'water_price', 'current_contract_id',
+        'area', 'area_m2', 'floor', 'amenities', 'images'
+    ]
     
+    update_fields = {}
     for field in allowed_fields:
         if field in data:
-            if field in ['deposit', 'electric_price', 'water_price']:
-                update_fields[field] = float(data[field])
-            elif field == 'payment_day':
-                update_fields[field] = int(data[field])
-            else:
-                update_fields[field] = data[field]
+            value = data[field]
+            # Type conversion
+            if field in ['price', 'deposit', 'electricity_price', 'electric_price', 'water_price', 'area', 'area_m2']:
+                value = float(value)
+            elif field == 'floor':
+                value = int(value or 1)
+            elif field == 'amenities':
+                if isinstance(value, str):
+                    value = [a.strip() for a in value.split(',') if a.strip()]
+                if not isinstance(value, list):
+                    value = []
+            elif field == 'images':
+                if not isinstance(value, list):
+                    value = []
+                normalized_images = []
+                for img in value:
+                    if not isinstance(img, dict):
+                        continue
+                    content_type = (img.get('content_type') or 'image/jpeg').strip()
+                    filename = (img.get('filename') or '').strip()
+                    data_b64 = img.get('data_b64') or img.get('data')
+                    if not data_b64:
+                        continue
+                    try:
+                        base64.b64decode(str(data_b64), validate=True)
+                    except Exception:
+                        continue
+                    normalized_images.append({'filename': filename, 'content_type': content_type, 'data_b64': str(data_b64)})
+                value = normalized_images
+            update_fields[field] = value
     
-    update_fields['updated_at'] = datetime.datetime.utcnow().isoformat()
+    if not update_fields:
+        return jsonify({'message': 'Không có dữ liệu cập nhật!'}), 400
+    
+    update_fields['updated_at'] = get_timestamp()
     
     try:
-        rooms_collection.update_one(
-            {'_id': room_id},
-            {'$set': update_fields}
-        )
-        
+        rooms_collection.update_one({'_id': room_id}, {'$set': update_fields})
         updated_room = rooms_collection.find_one({'_id': room_id})
-        updated_room['id'] = updated_room['_id']
         
         return jsonify({
             'message': 'Cập nhật phòng thành công!',
-            'room': updated_room
+            'room': format_room_response(updated_room)
         }), 200
     except Exception as e:
         return jsonify({'message': f'Lỗi cập nhật: {str(e)}'}), 500
 
-# API Xóa phòng (Admin only)
+
 @app.route('/api/rooms/<room_id>', methods=['DELETE'])
 @token_required
 @admin_required
 def delete_room(current_user, room_id):
+    """Delete a room (admin only)"""
     room = rooms_collection.find_one({'_id': room_id})
     
     if not room:
         return jsonify({'message': 'Phòng không tồn tại!'}), 404
     
-    # Không cho xóa phòng đang có người thuê
-    if room['status'] == 'occupied':
+    if room.get('status') == Config.STATUS_OCCUPIED:
         return jsonify({'message': 'Không thể xóa phòng đang có người thuê!'}), 400
     
     try:
@@ -236,69 +278,261 @@ def delete_room(current_user, room_id):
     except Exception as e:
         return jsonify({'message': f'Lỗi xóa phòng: {str(e)}'}), 500
 
-# API Lấy thống kê phòng
+
 @app.route('/api/rooms/stats', methods=['GET'])
 @token_required
 def get_room_stats(current_user):
-    total_rooms = rooms_collection.count_documents({})
-    available_rooms = rooms_collection.count_documents({'status': 'available'})
-    occupied_rooms = rooms_collection.count_documents({'status': 'occupied'})
-    maintenance_rooms = rooms_collection.count_documents({'status': 'maintenance'})
-    reserved_rooms = rooms_collection.count_documents({'status': 'reserved'})
+    """Get room statistics"""
+    total = rooms_collection.count_documents({})
+    available = rooms_collection.count_documents({'status': Config.STATUS_AVAILABLE})
+    occupied = rooms_collection.count_documents({'status': Config.STATUS_OCCUPIED})
+    maintenance = rooms_collection.count_documents({'status': Config.STATUS_MAINTENANCE})
+    reserved = rooms_collection.count_documents({'status': Config.STATUS_RESERVED})
+    
+    occupancy_rate = round((occupied / total * 100) if total > 0 else 0, 2)
     
     return jsonify({
-        'total': total_rooms,
-        'available': available_rooms,
-        'occupied': occupied_rooms,
-        'maintenance': maintenance_rooms,
-        'reserved': reserved_rooms,
-        'occupancy_rate': round((occupied_rooms / total_rooms * 100) if total_rooms > 0 else 0, 2)
+        'total': total,
+        'available': available,
+        'occupied': occupied,
+        'maintenance': maintenance,
+        'reserved': reserved,
+        'occupancy_rate': occupancy_rate
     }), 200
 
-# API Lấy danh sách phòng trống (cho user)
-@app.route('/api/rooms/available', methods=['GET'])
-def get_available_rooms():
-    rooms = list(rooms_collection.find({'status': 'available'}).sort('price', 1))
-    
-    for room in rooms:
-        room['id'] = room['_id']
-        # Ẩn một số thông tin nhạy cảm với user
-        room.pop('tenant_id', None)
-        room.pop('electric_meter', None)
-        room.pop('water_meter', None)
-        # Đảm bảo có các trường mới (backward compatibility)
-        if 'deposit' not in room:
-            room['deposit'] = 0
-        if 'payment_day' not in room:
-            room['payment_day'] = 5
-        if 'electric_price' not in room:
-            room['electric_price'] = 3500
-        if 'water_price' not in room:
-            room['water_price'] = 20000
-    
-    return jsonify({'rooms': rooms, 'total': len(rooms)}), 200
 
-# Internal endpoint for other services to update room status (hold/release)
+# ============== Internal APIs ==============
+
 @app.route('/internal/rooms/<room_id>/status', methods=['PUT'])
 @internal_api_required
 def internal_update_room_status(room_id):
+    """Internal API for other services to update room status"""
     data = request.get_json() or {}
     new_status = data.get('status')
-    if new_status not in ALLOWED_ROOM_STATUSES:
+    
+    if new_status not in Config.ALLOWED_STATUSES:
         return jsonify({'message': 'Trạng thái phòng không hợp lệ!'}), 400
     
-    update_fields = {'status': new_status, 'updated_at': datetime.datetime.utcnow().isoformat()}
-    if 'tenant_id' in data:
-        update_fields['tenant_id'] = data['tenant_id']
+    update_fields = {
+        'status': new_status,
+        'updated_at': get_timestamp()
+    }
+    
+    if 'current_contract_id' in data:
+        update_fields['current_contract_id'] = data['current_contract_id']
     
     result = rooms_collection.update_one({'_id': room_id}, {'$set': update_fields})
+    
     if result.matched_count == 0:
         return jsonify({'message': 'Phòng không tồn tại!'}), 404
     
-    return jsonify({'message': 'Cập nhật trạng thái phòng thành công!', 'status': new_status}), 200
+    return jsonify({
+        'message': 'Cập nhật trạng thái phòng thành công!',
+        'status': new_status
+    }), 200
+
+
+@app.route('/api/rooms/my-reservations', methods=['GET'])
+@token_required
+def get_my_reservations(current_user):
+    """Get rooms reserved by current user"""
+    user_id = current_user.get('user_id') or current_user.get('_id')
+    if not user_id:
+        return jsonify({'message': 'Không tìm thấy user_id!'}), 400
+
+    rooms = list(
+        rooms_collection.find(
+            {
+                'status': Config.STATUS_RESERVED,
+                'reserved_by_tenant_id': str(user_id),
+            }
+        ).sort('updated_at', -1)
+    )
+
+    return jsonify({'rooms': [format_room_response(r) for r in rooms], 'total': len(rooms)}), 200
+
+
+@app.route('/internal/rooms/<room_id>/reservation/hold', methods=['PUT'])
+@internal_api_required
+def internal_hold_room_reservation(room_id):
+    """Hold a room for reservation while user is paying deposit (internal)."""
+    data = request.get_json() or {}
+    tenant_id = data.get('tenant_id')
+    payment_id = data.get('payment_id')
+    if not tenant_id or not payment_id:
+        return jsonify({'message': 'Thiếu tenant_id hoặc payment_id!'}), 400
+
+    room = rooms_collection.find_one({'_id': room_id})
+    if not room:
+        return jsonify({'message': 'Phòng không tồn tại!'}), 404
+
+    if room.get('status') != Config.STATUS_AVAILABLE:
+        return jsonify({'message': 'Phòng không còn trống để giữ!'}), 400
+
+    update_fields = {
+        'status': Config.STATUS_RESERVED,
+        'reserved_by_tenant_id': str(tenant_id),
+        'reserved_payment_id': str(payment_id),
+        'reservation_status': 'pending_payment',
+        'reserved_at': get_timestamp(),
+        'updated_at': get_timestamp(),
+    }
+
+    rooms_collection.update_one({'_id': room_id}, {'$set': update_fields})
+    return jsonify({'message': 'Giữ phòng thành công!', 'room_id': room_id, 'status': Config.STATUS_RESERVED}), 200
+
+
+@app.route('/internal/rooms/<room_id>/reservation/confirm', methods=['PUT'])
+@internal_api_required
+def internal_confirm_room_reservation(room_id):
+    """Confirm a room reservation after VNPay completed (internal)."""
+    data = request.get_json() or {}
+    payment_id = data.get('payment_id')
+    if not payment_id:
+        return jsonify({'message': 'Thiếu payment_id!'}), 400
+
+    room = rooms_collection.find_one({'_id': room_id})
+    if not room:
+        return jsonify({'message': 'Phòng không tồn tại!'}), 404
+
+    if room.get('status') != Config.STATUS_RESERVED:
+        return jsonify({'message': 'Phòng chưa ở trạng thái giữ!'}), 400
+    if str(room.get('reserved_payment_id') or '') != str(payment_id):
+        return jsonify({'message': 'payment_id không khớp với phòng đang giữ!'}), 400
+
+    rooms_collection.update_one(
+        {'_id': room_id},
+        {'$set': {'reservation_status': 'paid', 'updated_at': get_timestamp()}},
+    )
+    return jsonify({'message': 'Xác nhận giữ phòng thành công!', 'room_id': room_id}), 200
+
+
+@app.route('/internal/rooms/<room_id>/reservation/release', methods=['PUT'])
+@internal_api_required
+def internal_release_room_reservation(room_id):
+    """Release a room if VNPay was cancelled/failed (internal)."""
+    data = request.get_json() or {}
+    payment_id = data.get('payment_id')
+    if not payment_id:
+        return jsonify({'message': 'Thiếu payment_id!'}), 400
+
+    room = rooms_collection.find_one({'_id': room_id})
+    if not room:
+        return jsonify({'message': 'Phòng không tồn tại!'}), 404
+
+    if room.get('status') != Config.STATUS_RESERVED:
+        return jsonify({'message': 'Phòng không ở trạng thái giữ!'}), 400
+    if str(room.get('reserved_payment_id') or '') != str(payment_id):
+        return jsonify({'message': 'payment_id không khớp với phòng đang giữ!'}), 400
+
+    # Only release if still pending payment
+    if room.get('reservation_status') != 'pending_payment':
+        return jsonify({'message': 'Không thể nhả phòng (đã xác nhận hoặc trạng thái không hợp lệ)!'}), 400
+
+    rooms_collection.update_one(
+        {'_id': room_id},
+        {
+            '$set': {
+                'status': Config.STATUS_AVAILABLE,
+                'reserved_by_tenant_id': None,
+                'reserved_payment_id': None,
+                'reservation_status': None,
+                'reserved_at': None,
+                'updated_at': get_timestamp(),
+            }
+        },
+    )
+    return jsonify({'message': 'Nhả phòng thành công!', 'room_id': room_id, 'status': Config.STATUS_AVAILABLE}), 200
+
+
+@app.route('/internal/rooms/<room_id>/occupy', methods=['PUT'])
+@internal_api_required
+def internal_occupy_room(room_id):
+    """Mark a reserved room as occupied after admin creates a contract (internal)."""
+    data = request.get_json() or {}
+    tenant_id = data.get('tenant_id')
+    contract_id = data.get('contract_id')
+
+    if not tenant_id or not contract_id:
+        return jsonify({'message': 'Thiếu tenant_id hoặc contract_id!'}), 400
+
+    room = rooms_collection.find_one({'_id': room_id})
+    if not room:
+        return jsonify({'message': 'Phòng không tồn tại!'}), 404
+
+    if room.get('status') != Config.STATUS_RESERVED:
+        return jsonify({'message': 'Phòng không ở trạng thái giữ!'}), 400
+
+    # A tenant can occupy only one room at a time
+    existing = rooms_collection.find_one({
+        'current_tenant_id': str(tenant_id),
+        'status': Config.STATUS_OCCUPIED,
+        '_id': {'$ne': room_id}
+    })
+    if existing:
+        return jsonify({'message': 'Người thuê đã có phòng khác đang thuê!'}), 400
+
+    # Only allow occupying if reservation was confirmed.
+    if str(room.get('reservation_status') or '') not in ['paid']:
+        return jsonify({'message': 'Phòng chưa được xác nhận cọc (reservation_status != paid)!'}), 400
+
+    update_fields = {
+        'status': Config.STATUS_OCCUPIED,
+        'current_contract_id': str(contract_id),
+        'current_tenant_id': str(tenant_id),
+        'reserved_by_tenant_id': None,
+        'reserved_payment_id': None,
+        'reservation_status': None,
+        'reserved_at': None,
+        'updated_at': get_timestamp(),
+    }
+
+    rooms_collection.update_one({'_id': room_id}, {'$set': update_fields})
+    return jsonify({'message': 'Gán hợp đồng và chuyển phòng sang đang thuê thành công!', 'room_id': room_id}), 200
+
+
+@app.route('/internal/rooms/<room_id>/vacate', methods=['PUT'])
+@internal_api_required
+def internal_vacate_room(room_id):
+    """Vacate a room when contract is terminated (internal)."""
+    room = rooms_collection.find_one({'_id': room_id})
+    if not room:
+        return jsonify({'message': 'Phòng không tồn tại!'}), 404
+
+    data = request.get_json() or {}
+    contract_id = str(data.get('contract_id') or '')
+
+    # If the room is linked to a different contract, block vacate to avoid race.
+    if room.get('current_contract_id') and contract_id and room.get('current_contract_id') != contract_id:
+        return jsonify({'message': 'Phòng đang gán với hợp đồng khác, không thể nhả!'}), 400
+
+    update_fields = {
+        'status': Config.STATUS_AVAILABLE,
+        'current_contract_id': None,
+        'current_tenant_id': None,
+        'reserved_by_tenant_id': None,
+        'reserved_payment_id': None,
+        'reservation_status': None,
+        'reserved_at': None,
+        'updated_at': get_timestamp(),
+    }
+
+    rooms_collection.update_one({'_id': room_id}, {'$set': update_fields})
+    return jsonify({'message': 'Đã nhả phòng, phòng trở lại trạng thái trống.', 'room_id': room_id, 'status': Config.STATUS_AVAILABLE}), 200
+
+
+# ============== Application Entry Point ==============
 
 if __name__ == '__main__':
-    import os
+    print(f"\n{'='*50}")
+    print(f"  {Config.SERVICE_NAME.upper()}")
+    print(f"  Port: {Config.SERVICE_PORT}")
+    print(f"  Debug: {Config.DEBUG}")
+    print(f"{'='*50}\n")
+    
     register_service()
-    debug_mode = os.getenv('FLASK_DEBUG', 'false').lower() == 'true'
-    app.run(host='0.0.0.0', port=SERVICE_PORT, debug=debug_mode)
+    app.run(
+        host='0.0.0.0',
+        port=Config.SERVICE_PORT,
+        debug=Config.DEBUG
+    )

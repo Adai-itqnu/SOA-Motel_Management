@@ -1,55 +1,44 @@
-import consul
-import socket
-import os
-from config import SERVICE_NAME, SERVICE_PORT, CONSUL_HOST, CONSUL_PORT
+"""Report Service - Consul Registry"""
+import socket, os, time, consul
+from config import Config
 
-def register_service():
-    """Register service with Consul"""
-    import time
+class ServiceRegistry:
+    def __init__(self):
+        self.consul_client = None
+        self.service_id = None
     
-    # Đợi Consul sẵn sàng
-    max_retries = 10
-    for i in range(max_retries):
+    def register(self):
+        for i in range(10):
+            try:
+                self.consul_client = consul.Consul(host=Config.CONSUL_HOST, port=Config.CONSUL_PORT)
+                self.consul_client.agent.self()
+                break
+            except:
+                if i < 9: time.sleep(2)
+                else: return False
         try:
-            c = consul.Consul(host=CONSUL_HOST, port=CONSUL_PORT)
-            # Test connection
-            c.agent.self()
-            break
+            addr = os.getenv('HOSTNAME', socket.gethostname())
+            try:
+                ip = socket.gethostbyname(addr)
+                if ip != "127.0.0.1": addr = ip
+            except: pass
+            self.service_id = f"{Config.SERVICE_NAME}-{addr}"
+            self.consul_client.agent.service.register(
+                name=Config.SERVICE_NAME, service_id=self.service_id,
+                address=addr, port=Config.SERVICE_PORT,
+                check=consul.Check.http(f"http://{addr}:{Config.SERVICE_PORT}/health", interval="10s", timeout="5s")
+            )
+            print(f"[CONSUL] ✓ Registered {Config.SERVICE_NAME}")
+            return True
         except Exception as e:
-            if i < max_retries - 1:
-                print(f"[CONSUL] Waiting for Consul... (attempt {i+1}/{max_retries})")
-                time.sleep(2)
-            else:
-                print(f"[CONSUL] Cannot connect to Consul: {e}")
-                return
+            print(f"[CONSUL] ✗ Failed: {e}")
+            return False
     
-    try:
-        # Trong Docker network, sử dụng container name (hostname) để các service khác có thể kết nối
-        container_name = os.getenv('HOSTNAME', socket.gethostname())
-        
-        c = consul.Consul(host=CONSUL_HOST, port=CONSUL_PORT)
-        
-        try:
-            container_ip = socket.gethostbyname(container_name)
-            if container_ip == "127.0.0.1":
-                service_address = container_name
-            else:
-                service_address = container_ip
-        except:
-            service_address = container_name
-        
-        health_url = f"http://{service_address}:{SERVICE_PORT}/health"
-        
-        c.agent.service.register(
-            SERVICE_NAME,
-            address=service_address,
-            port=SERVICE_PORT,
-            check=consul.Check.http(health_url, interval="10s", timeout="5s")
-        )
-        
-        print(f"[CONSUL] ✓ Registered {SERVICE_NAME} at {service_address}:{SERVICE_PORT}")
-        print(f"[CONSUL]   Health check: {health_url}")
-    except Exception as e:
-        print(f"[CONSUL] ✗ Error registering service: {e}")
-        import traceback
-        traceback.print_exc()
+    def deregister(self):
+        if self.consul_client and self.service_id:
+            try: self.consul_client.agent.service.deregister(self.service_id)
+            except: pass
+
+_registry = ServiceRegistry()
+def register_service(): return _registry.register()
+def deregister_service(): return _registry.deregister()

@@ -1,441 +1,1303 @@
-from flask import Flask, request, jsonify
-from flask_cors import CORS
+from __future__ import annotations
+
 import datetime
+import os
 import uuid
-import jwt
 from functools import wraps
-import requests
-import hashlib
-import urllib.parse
-from config import JWT_SECRET, SERVICE_NAME, SERVICE_PORT, CONSUL_HOST, CONSUL_PORT, VNPAY_TMN_CODE, VNPAY_HASH_SECRET, VNPAY_URL, VNPAY_RETURN_URL, INTERNAL_API_KEY
+
+import jwt
+from flask import Flask, jsonify, redirect, request
+from flask_cors import CORS
+
+from config import (
+    JWT_SECRET,
+    SERVICE_NAME,
+    SERVICE_PORT,
+    VNPAY_API_URL,
+    VNPAY_CONFIRM_MODE,
+    VNPAY_HASH_SECRET,
+    VNPAY_IPN_URL,
+    VNPAY_RETURN_URL,
+    VNPAY_TMN_CODE,
+    VNPAY_URL,
+)
 from model import payments_collection
 from service_registry import register_service
+from utils import (
+    auto_create_contract,
+    calculate_total_paid,
+    confirm_room_reservation,
+    fetch_service_data,
+    hold_room_reservation,
+    release_room_reservation,
+    update_bill_status_if_paid,
+    update_booking_deposit_status,
+    send_notification,
+)
+from vnpay import build_payment_url, querydr_verify_transaction, validate_return_or_ipn
+
+
+def _get_bearer_token() -> str | None:
+    token = request.headers.get("Authorization") or request.headers.get("authorization")
+    if not token:
+        return None
+    if token.lower().startswith("bearer "):
+        return token[7:]
+    return token
+
+
+def token_required(fn):
+    @wraps(fn)
+    def decorated(*args, **kwargs):
+        token = _get_bearer_token()
+        if not token:
+            return jsonify({"message": "Token không tồn tại!"}), 401
+
+        try:
+            payload = jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
+        except jwt.ExpiredSignatureError:
+            return jsonify({"message": "Token đã hết hạn!"}), 401
+        except jwt.InvalidTokenError:
+            return jsonify({"message": "Token không hợp lệ!"}), 401
+
+        return fn(payload, *args, **kwargs)
+
+    return decorated
+
+
+def admin_required(fn):
+    @wraps(fn)
+    def decorated(current_user, *args, **kwargs):
+        if current_user.get("role") != "admin":
+            return jsonify({"message": "Yêu cầu quyền admin!"}), 403
+        return fn(current_user, *args, **kwargs)
+
+    return decorated
+
+
+def _utc_now_iso() -> str:
+    return datetime.datetime.utcnow().isoformat() + "Z"
+
+
+def _today_str() -> str:
+    return datetime.datetime.utcnow().strftime("%Y-%m-%d")
+
+
+def _get_client_ip() -> str:
+    return (
+        request.headers.get("X-Forwarded-For", "").split(",")[0].strip()
+        or request.remote_addr
+        or "127.0.0.1"
+    )
+
 
 app = Flask(__name__)
 CORS(app)
 
-from routes import payment_bp
-app.register_blueprint(payment_bp, url_prefix='/api/payments')
-
-# Load configuration
-app.config['SECRET_KEY'] = JWT_SECRET
-app.config['SERVICE_NAME'] = SERVICE_NAME
-app.config['SERVICE_PORT'] = SERVICE_PORT
-
-# Decorator xác thực token
-def token_required(f):
-    @wraps(f)
-    def decorated(*args, **kwargs):
-        # Try both 'Authorization' and 'authorization' (nginx may lowercase headers)
-        token = request.headers.get('Authorization') or request.headers.get('authorization')
-        
-        if not token:
-            return jsonify({'message': 'Token không tồn tại!'}), 401
-        
-        try:
-            if token.startswith('Bearer '):
-                token = token[7:]
-            elif token.startswith('bearer '):
-                token = token[7:]
-            
-            data = jwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'])
-            current_user = data
-            
-        except jwt.ExpiredSignatureError:
-            return jsonify({'message': 'Token đã hết hạn!'}), 401
-        except jwt.InvalidTokenError:
-            return jsonify({'message': 'Token không hợp lệ!'}), 401
-        
-        return f(current_user, *args, **kwargs)
-    
-    return decorated
-
-# Decorator kiểm tra quyền admin
-def admin_required(f):
-    @wraps(f)
-    def decorated(current_user, *args, **kwargs):
-        if current_user.get('role') != 'admin':
-            return jsonify({'message': 'Yêu cầu quyền admin!'}), 403
-        return f(current_user, *args, **kwargs)
-    return decorated
-
-from utils import (
-    get_service_url, fetch_service_data, call_service_api,
-    update_booking_deposit_status, send_notification,
-    calculate_total_paid, update_bill_status_if_paid
-)
+app.config["SECRET_KEY"] = JWT_SECRET
+app.config["SERVICE_NAME"] = SERVICE_NAME
+app.config["SERVICE_PORT"] = SERVICE_PORT
 
 
+# ---------------------------
+# Health
+# ---------------------------
 
-# Health check endpoint
-@app.route('/health', methods=['GET'])
+
+@app.route("/health", methods=["GET"])
 def health_check():
-    return jsonify({'status': 'healthy', 'service': app.config['SERVICE_NAME']}), 200
+    return jsonify({"status": "healthy", "service": app.config["SERVICE_NAME"]}), 200
 
-# API Tạo thanh toán mới
-@app.route('/api/payments', methods=['POST'])
+
+# ---------------------------
+# Payments API (bill payments)
+# ---------------------------
+
+
+@app.route("/api/payments", methods=["POST"])
 @token_required
 def create_payment(current_user):
-    data = request.get_json()
-    
-    # Validation
-    required_fields = ['bill_id', 'tenant_id', 'amount', 'method', 'payment_date']
-    for field in required_fields:
-        if field not in data:
-            return jsonify({'message': f'Thiếu trường {field}!'}), 400
-    
-    # Validate method
-    valid_methods = ['cash', 'bank_transfer', 'momo', 'vnpay']
-    if data['method'] not in valid_methods:
-        return jsonify({'message': f'Phương thức thanh toán không hợp lệ! Chỉ chấp nhận: {", ".join(valid_methods)}'}), 400
-    
-    # Validate amount
-    amount = float(data['amount'])
+    data = request.get_json() or {}
+
+    required_fields = ["bill_id", "amount", "method"]
+    missing = [f for f in required_fields if not data.get(f)]
+    if missing:
+        return jsonify({"message": f"Thiếu trường {', '.join(missing)}!"}), 400
+
+    valid_methods = ["cash", "bank_transfer", "momo", "vnpay"]
+    if data["method"] not in valid_methods:
+        return (
+            jsonify(
+                {
+                    "message": "Phương thức thanh toán không hợp lệ! Chỉ chấp nhận: "
+                    + ", ".join(valid_methods)
+                }
+            ),
+            400,
+        )
+
+    try:
+        amount = float(data["amount"])
+    except Exception:
+        return jsonify({"message": "Số tiền không hợp lệ!"}), 400
     if amount <= 0:
-        return jsonify({'message': 'Số tiền phải lớn hơn 0!'}), 400
-    
-    # Validate status (nếu có)
-    if 'status' in data:
-        valid_statuses = ['pending', 'completed', 'failed']
-        if data['status'] not in valid_statuses:
-            return jsonify({'message': f'Status không hợp lệ! Chỉ chấp nhận: {", ".join(valid_statuses)}'}), 400
-    else:
-        data['status'] = 'pending'
-    
-    # Lấy thông tin hóa đơn từ bill-service
-    token = request.headers.get('Authorization') or request.headers.get('authorization')
-    bill_data = fetch_service_data('bill-service', f"/api/bills/{data['bill_id']}", token)
-    
+        return jsonify({"message": "Số tiền phải lớn hơn 0!"}), 400
+
+    status = data.get("status") or "pending"
+    valid_statuses = ["pending", "completed", "failed"]
+    if status not in valid_statuses:
+        return (
+            jsonify(
+                {
+                    "message": f"Status không hợp lệ! Chỉ chấp nhận: {', '.join(valid_statuses)}"
+                }
+            ),
+            400,
+        )
+
+    bill_id = data["bill_id"]
+
+    token = request.headers.get("Authorization") or request.headers.get("authorization")
+    bill_data = fetch_service_data("bill-service", f"/api/bills/{bill_id}", token)
     if not bill_data:
-        return jsonify({'message': 'Hóa đơn không tồn tại!'}), 404
-    
-    bill = bill_data if isinstance(bill_data, dict) else bill_data.get('bill', bill_data)
-    
-    # Kiểm tra bill status
-    if bill.get('status') == 'paid':
-        return jsonify({'message': 'Hóa đơn đã được thanh toán đầy đủ!'}), 400
-    
-    # Kiểm tra số tiền thanh toán không vượt quá số tiền còn lại
-    total_paid = calculate_total_paid(data['bill_id'])
-    remaining_amount = bill['total_amount'] - total_paid
-    
+        return jsonify({"message": "Hóa đơn không tồn tại!"}), 404
+
+    bill = bill_data if isinstance(bill_data, dict) else bill_data.get("bill", bill_data)
+    if bill.get("status") == "paid":
+        return jsonify({"message": "Hóa đơn đã được thanh toán đầy đủ!"}), 400
+
+    bill_total = float(bill.get("total_amount") or bill.get("total") or 0)
+    total_paid = calculate_total_paid(bill_id)
+    remaining_amount = bill_total - float(total_paid)
     if amount > remaining_amount:
-        return jsonify({
-            'message': f'Số tiền thanh toán ({amount:,.0f}) vượt quá số tiền còn lại ({remaining_amount:,.0f})!'
-        }), 400
-    
-    # Tạo payment_id sử dụng UUID (thread-safe)
-    payment_id = f"P{uuid.uuid4().hex[:8].upper()}"
-    
-    # Đảm bảo không trùng (retry nếu cần)
-    while payments_collection.find_one({'_id': payment_id}):
-        payment_id = f"P{uuid.uuid4().hex[:8].upper()}"
-    
+        return (
+            jsonify(
+                {
+                    "message": f"Số tiền thanh toán ({amount:,.0f}) vượt quá số tiền còn lại ({remaining_amount:,.0f})!"
+                }
+            ),
+            400,
+        )
+
+    payment_id = f"P{uuid.uuid4().hex[:10].upper()}"
+    while payments_collection.find_one({"_id": payment_id}):
+        payment_id = f"P{uuid.uuid4().hex[:10].upper()}"
+
+    tenant_id = data.get("tenant_id")
+    if current_user.get("role") != "admin":
+        tenant_id = current_user.get("user_id") or current_user.get("_id")
+
+    payment_date = data.get("payment_date") or _today_str()
+
     new_payment = {
-        '_id': payment_id,
-        'bill_id': data['bill_id'],
-        'tenant_id': data['tenant_id'],
-        'amount': amount,
-        'method': data['method'],
-        'payment_date': data['payment_date'],
-        'status': data['status']
+        "_id": payment_id,
+        "payment_type": "bill_payment",
+        "bill_id": bill_id,
+        "tenant_id": tenant_id,
+        "amount": amount,
+        "currency": "VND",
+        "method": data["method"],
+        "payment_date": payment_date,
+        "status": status,
+        "created_at": _utc_now_iso(),
+        "updated_at": _utc_now_iso(),
     }
-    
+
     try:
         payments_collection.insert_one(new_payment)
-        new_payment['id'] = new_payment['_id']
-        
-        # Nếu status là completed, kiểm tra và cập nhật bill status
-        if data['status'] == 'completed':
-            update_bill_status_if_paid(data['bill_id'], bill['total_amount'])
-        
-        return jsonify({
-            'message': 'Tạo thanh toán thành công!',
-            'payment': new_payment
-        }), 201
+        if status == "completed":
+            update_bill_status_if_paid(bill_id, bill_total)
+        new_payment["id"] = new_payment["_id"]
+        return jsonify({"message": "Tạo thanh toán thành công!", "payment": new_payment}), 201
     except Exception as e:
-        return jsonify({'message': f'Lỗi tạo thanh toán: {str(e)}'}), 500
+        return jsonify({"message": f"Lỗi tạo thanh toán: {str(e)}"}), 500
 
-# API Lấy danh sách thanh toán
-@app.route('/api/payments', methods=['GET'])
+
+@app.route("/api/payments", methods=["GET"])
 @token_required
 def get_payments(current_user):
-    bill_id = request.args.get('bill_id')
-    tenant_id = request.args.get('tenant_id')
-    payment_date = request.args.get('payment_date')
-    status = request.args.get('status')
-    
-    query = {}
-    
-    # Filter theo bill_id
-    if bill_id:
-        query['bill_id'] = bill_id
-    
-    # Filter theo tenant_id
-    if tenant_id:
-        query['tenant_id'] = tenant_id
-    
-    # Filter theo payment_date
-    if payment_date:
-        query['payment_date'] = payment_date
-    
-    # Filter theo status
-    if status:
-        query['status'] = status
-    
-    # Nếu là user thường, chỉ cho xem thanh toán của mình
-    if current_user.get('role') != 'admin':
-        query['tenant_id'] = current_user.get('user_id') or current_user.get('id')
-    
-    payments = list(payments_collection.find(query).sort('payment_date', -1))
-    
-    # Convert ObjectId
-    for payment in payments:
-        payment['id'] = payment['_id']
-    
-    return jsonify({'payments': payments, 'total': len(payments)}), 200
+    bill_id = request.args.get("bill_id")
+    room_id = request.args.get("room_id")
+    booking_id = request.args.get("booking_id")
+    tenant_id = request.args.get("tenant_id")
+    payment_date = request.args.get("payment_date")
+    status = request.args.get("status")
+    payment_type = request.args.get("payment_type")
 
-# API Lấy chi tiết thanh toán
-@app.route('/api/payments/<payment_id>', methods=['GET'])
+    query: dict = {}
+    if bill_id:
+        query["bill_id"] = bill_id
+    if room_id:
+        query["room_id"] = room_id
+    if booking_id:
+        query["booking_id"] = booking_id
+    if tenant_id:
+        query["tenant_id"] = tenant_id
+    if payment_date:
+        query["payment_date"] = payment_date
+    if status:
+        query["status"] = status
+    if payment_type:
+        query["payment_type"] = payment_type
+
+    if current_user.get("role") != "admin":
+        query["tenant_id"] = current_user.get("user_id") or current_user.get("_id")
+
+    payments = list(payments_collection.find(query).sort("payment_date", -1))
+    for p in payments:
+        p["id"] = p.get("_id")
+
+    return jsonify({"payments": payments, "total": len(payments)}), 200
+
+
+@app.route("/api/payments/<payment_id>", methods=["GET"])
 @token_required
 def get_payment(current_user, payment_id):
-    payment = payments_collection.find_one({'_id': payment_id})
-    
+    payment = payments_collection.find_one({"_id": payment_id})
     if not payment:
-        return jsonify({'message': 'Thanh toán không tồn tại!'}), 404
-    
-    # Nếu là user thường, chỉ cho xem thanh toán của mình
-    if current_user.get('role') != 'admin':
-        if payment['tenant_id'] != (current_user.get('user_id') or current_user.get('id')):
-            return jsonify({'message': 'Không có quyền xem thanh toán này!'}), 403
-    
-    payment['id'] = payment['_id']
+        return jsonify({"message": "Thanh toán không tồn tại!"}), 404
+
+    if current_user.get("role") != "admin":
+        if payment.get("tenant_id") != (current_user.get("user_id") or current_user.get("_id")):
+            return jsonify({"message": "Không có quyền xem thanh toán này!"}), 403
+
+    payment["id"] = payment.get("_id")
     return jsonify(payment), 200
 
-# API Lấy tất cả thanh toán của một hóa đơn
-@app.route('/api/payments/bill/<bill_id>', methods=['GET'])
+
+@app.route("/api/payments/bill/<bill_id>", methods=["GET"])
 @token_required
 def get_payments_by_bill(current_user, bill_id):
-    payments = list(payments_collection.find({'bill_id': bill_id}).sort('payment_date', -1))
-    
-    # Tính tổng thanh toán
+    payments = list(payments_collection.find({"bill_id": bill_id}).sort("payment_date", -1))
     total_paid = calculate_total_paid(bill_id)
-    
-    # Lấy thông tin hóa đơn
-    token = request.headers.get('Authorization') or request.headers.get('authorization')
-    bill_data = fetch_service_data('bill-service', f"/api/bills/{bill_id}", token)
-    
-    bill = bill_data if isinstance(bill_data, dict) else bill_data.get('bill', bill_data) if bill_data else {}
-    total_amount = bill.get('total_amount', 0)
-    remaining_amount = total_amount - total_paid
-    
-    # Convert ObjectId
-    for payment in payments:
-        payment['id'] = payment['_id']
-    
-    return jsonify({
-        'payments': payments,
-        'total': len(payments),
-        'total_paid': total_paid,
-        'total_amount': total_amount,
-        'remaining_amount': remaining_amount
-    }), 200
 
-# API Cập nhật thanh toán
-@app.route('/api/payments/<payment_id>', methods=['PUT'])
+    token = request.headers.get("Authorization") or request.headers.get("authorization")
+    bill_data = fetch_service_data("bill-service", f"/api/bills/{bill_id}", token)
+    bill = (
+        bill_data
+        if isinstance(bill_data, dict)
+        else bill_data.get("bill", bill_data)
+        if bill_data
+        else {}
+    )
+
+    total_amount = float(bill.get("total_amount") or bill.get("total") or 0)
+    remaining_amount = total_amount - float(total_paid)
+
+    for p in payments:
+        p["id"] = p.get("_id")
+
+    return (
+        jsonify(
+            {
+                "payments": payments,
+                "total": len(payments),
+                "total_paid": total_paid,
+                "total_amount": total_amount,
+                "remaining_amount": remaining_amount,
+            }
+        ),
+        200,
+    )
+
+
+@app.route("/api/payments/<payment_id>", methods=["PUT"])
 @token_required
 @admin_required
 def update_payment(current_user, payment_id):
-    payment = payments_collection.find_one({'_id': payment_id})
-    
+    payment = payments_collection.find_one({"_id": payment_id})
     if not payment:
-        return jsonify({'message': 'Thanh toán không tồn tại!'}), 404
-    
-    data = request.get_json()
-    
-    # Cập nhật các trường có thể thay đổi
-    update_fields = {}
-    
-    if 'amount' in data:
-        amount = float(data['amount'])
-        if amount <= 0:
-            return jsonify({'message': 'Số tiền phải lớn hơn 0!'}), 400
-        update_fields['amount'] = amount
-    
-    if 'status' in data:
-        valid_statuses = ['pending', 'completed', 'failed']
-        if data['status'] not in valid_statuses:
-            return jsonify({'message': f'Status không hợp lệ! Chỉ chấp nhận: {", ".join(valid_statuses)}'}), 400
-        update_fields['status'] = data['status']
-    
-    if 'method' in data:
-        valid_methods = ['cash', 'bank_transfer', 'momo', 'vnpay']
-        if data['method'] not in valid_methods:
-            return jsonify({'message': f'Phương thức thanh toán không hợp lệ! Chỉ chấp nhận: {", ".join(valid_methods)}'}), 400
-        update_fields['method'] = data['method']
-    
-    if 'payment_date' in data:
-        update_fields['payment_date'] = data['payment_date']
-    
-    if not update_fields:
-        return jsonify({'message': 'Không có trường nào để cập nhật!'}), 400
-    
-    try:
-        payments_collection.update_one(
-            {'_id': payment_id},
-            {'$set': update_fields}
-        )
-        
-        updated_payment = payments_collection.find_one({'_id': payment_id})
-        updated_payment['id'] = updated_payment['_id']
-        
-        # Nếu status chuyển thành completed, kiểm tra và cập nhật bill status
-        if 'status' in update_fields and update_fields['status'] == 'completed':
-            # Lấy thông tin hóa đơn
-            token = request.headers.get('Authorization') or request.headers.get('authorization')
-            bill_data = fetch_service_data('bill-service', f"/api/bills/{payment['bill_id']}", token)
-            if bill_data:
-                bill = bill_data if isinstance(bill_data, dict) else bill_data.get('bill', bill_data)
-                update_bill_status_if_paid(payment['bill_id'], bill.get('total_amount', 0))
-        
-        return jsonify({
-            'message': 'Cập nhật thanh toán thành công!',
-            'payment': updated_payment
-        }), 200
-    except Exception as e:
-        return jsonify({'message': f'Lỗi cập nhật thanh toán: {str(e)}'}), 500
+        return jsonify({"message": "Thanh toán không tồn tại!"}), 404
 
-# API Thống kê thanh toán
-@app.route('/api/payments/statistics', methods=['GET'])
+    data = request.get_json() or {}
+    update_fields = {}
+
+    if "amount" in data:
+        try:
+            amount = float(data["amount"])
+        except Exception:
+            return jsonify({"message": "Số tiền không hợp lệ!"}), 400
+        if amount <= 0:
+            return jsonify({"message": "Số tiền phải lớn hơn 0!"}), 400
+        update_fields["amount"] = amount
+
+    if "status" in data:
+        valid_statuses = ["pending", "completed", "failed"]
+        if data["status"] not in valid_statuses:
+            return (
+                jsonify(
+                    {
+                        "message": f"Status không hợp lệ! Chỉ chấp nhận: {', '.join(valid_statuses)}"
+                    }
+                ),
+                400,
+            )
+        update_fields["status"] = data["status"]
+
+    if "method" in data:
+        valid_methods = ["cash", "bank_transfer", "momo", "vnpay"]
+        if data["method"] not in valid_methods:
+            return (
+                jsonify(
+                    {
+                        "message": "Phương thức thanh toán không hợp lệ! Chỉ chấp nhận: "
+                        + ", ".join(valid_methods)
+                    }
+                ),
+                400,
+            )
+        update_fields["method"] = data["method"]
+
+    if "payment_date" in data:
+        update_fields["payment_date"] = data["payment_date"]
+
+    if not update_fields:
+        return jsonify({"message": "Không có trường nào để cập nhật!"}), 400
+
+    update_fields["updated_at"] = _utc_now_iso()
+
+    payments_collection.update_one({"_id": payment_id}, {"$set": update_fields})
+    updated = payments_collection.find_one({"_id": payment_id})
+    updated["id"] = updated.get("_id")
+
+    if update_fields.get("status") == "completed" and updated.get("bill_id"):
+        token = request.headers.get("Authorization") or request.headers.get("authorization")
+        bill_data = fetch_service_data("bill-service", f"/api/bills/{updated['bill_id']}", token)
+        if bill_data:
+            bill = bill_data if isinstance(bill_data, dict) else bill_data.get("bill", bill_data)
+            bill_total = float(bill.get("total_amount") or bill.get("total") or 0)
+            update_bill_status_if_paid(updated["bill_id"], bill_total)
+
+    return jsonify({"message": "Cập nhật thanh toán thành công!", "payment": updated}), 200
+
+
+@app.route("/api/payments/statistics", methods=["GET"])
 @token_required
 @admin_required
 def get_payment_statistics(current_user):
-    # Tổng số thanh toán
     total_payments = payments_collection.count_documents({})
-    
-    # Tổng số tiền đã thanh toán (completed)
+
     pipeline_total = [
-        {'$match': {'status': 'completed'}},
-        {'$group': {'_id': None, 'total': {'$sum': '$amount'}}}
+        {"$match": {"status": "completed"}},
+        {"$group": {"_id": None, "total": {"$sum": "$amount"}}},
     ]
     result_total = list(payments_collection.aggregate(pipeline_total))
-    total_amount = result_total[0]['total'] if result_total else 0
-    
-    # Thống kê theo status
+    total_amount = result_total[0]["total"] if result_total else 0
+
     pipeline_status = [
-        {'$group': {
-            '_id': '$status',
-            'count': {'$sum': 1},
-            'total_amount': {'$sum': '$amount'}
-        }}
+        {
+            "$group": {
+                "_id": "$status",
+                "count": {"$sum": 1},
+                "total_amount": {"$sum": "$amount"},
+            }
+        }
     ]
     status_stats = list(payments_collection.aggregate(pipeline_status))
-    
-    # Thống kê theo phương thức thanh toán
+
     pipeline_method = [
-        {'$group': {
-            '_id': '$method',
-            'count': {'$sum': 1},
-            'total_amount': {'$sum': '$amount'}
-        }}
+        {
+            "$group": {
+                "_id": "$method",
+                "count": {"$sum": 1},
+                "total_amount": {"$sum": "$amount"},
+            }
+        }
     ]
     method_stats = list(payments_collection.aggregate(pipeline_method))
-    
-    # Thống kê theo ngày (30 ngày gần nhất)
-    from datetime import datetime, timedelta
-    thirty_days_ago = (datetime.now() - timedelta(days=30)).strftime('%Y-%m-%d')
-    recent_payments = payments_collection.count_documents({
-        'payment_date': {'$gte': thirty_days_ago},
-        'status': 'completed'
-    })
-    
+
+    thirty_days_ago = (datetime.datetime.utcnow() - datetime.timedelta(days=30)).strftime(
+        "%Y-%m-%d"
+    )
+    recent_payments = payments_collection.count_documents(
+        {"payment_date": {"$gte": thirty_days_ago}, "status": "completed"}
+    )
+
     pipeline_recent = [
-        {'$match': {'payment_date': {'$gte': thirty_days_ago}, 'status': 'completed'}},
-        {'$group': {'_id': None, 'total': {'$sum': '$amount'}}}
+        {"$match": {"payment_date": {"$gte": thirty_days_ago}, "status": "completed"}},
+        {"$group": {"_id": None, "total": {"$sum": "$amount"}}},
     ]
     result_recent = list(payments_collection.aggregate(pipeline_recent))
-    recent_amount = result_recent[0]['total'] if result_recent else 0
-    
-    return jsonify({
-        'total_payments': total_payments,
-        'total_amount': total_amount,
-        'recent_payments_30days': recent_payments,
-        'recent_amount_30days': recent_amount,
-        'by_status': {stat['_id']: {'count': stat['count'], 'total_amount': stat['total_amount']} for stat in status_stats},
-        'by_method': {stat['_id']: {'count': stat['count'], 'total_amount': stat['total_amount']} for stat in method_stats}
-    }), 200
+    recent_amount = result_recent[0]["total"] if result_recent else 0
 
-# API Tạo payment cho tiền cọc (booking/contract)
-@app.route('/api/payments/deposit', methods=['POST'])
+    return (
+        jsonify(
+            {
+                "total_payments": total_payments,
+                "total_amount": total_amount,
+                "recent_payments_30days": recent_payments,
+                "recent_amount_30days": recent_amount,
+                "by_status": {
+                    stat["_id"]: {"count": stat["count"], "total_amount": stat["total_amount"]}
+                    for stat in status_stats
+                },
+                "by_method": {
+                    stat["_id"]: {"count": stat["count"], "total_amount": stat["total_amount"]}
+                    for stat in method_stats
+                },
+            }
+        ),
+        200,
+    )
+
+
+@app.route("/api/payments/deposit", methods=["POST"])
 @token_required
 def create_deposit_payment(current_user):
-    data = request.get_json()
-    
-    # Validation
-    required_fields = ['amount', 'payment_type']
-    for field in required_fields:
-        if field not in data:
-            return jsonify({'message': f'Thiếu trường {field}!'}), 400
-    
-    # Validate payment_type
-    if data['payment_type'] not in ['booking', 'contract']:
-        return jsonify({'message': 'payment_type phải là "booking" hoặc "contract"!'}), 400
-    
-    # Validate booking_id hoặc contract_id
-    if data['payment_type'] == 'booking':
-        if 'booking_id' not in data:
-            return jsonify({'message': 'Thiếu trường booking_id!'}), 400
-    else:
-        if 'contract_id' not in data:
-            return jsonify({'message': 'Thiếu trường contract_id!'}), 400
-    
-    # Validate amount
-    amount = float(data['amount'])
-    if amount <= 0:
-        return jsonify({'message': 'Số tiền phải lớn hơn 0!'}), 400
-    
-    # Lấy tenant_id từ current_user
-    tenant_id = current_user.get('user_id') or current_user.get('id')
-    if not tenant_id:
-        return jsonify({'message': 'Không tìm thấy tenant_id!'}), 400
-    
-    # Tạo payment_id sử dụng UUID (thread-safe)
-    payment_id = f"P{uuid.uuid4().hex[:8].upper()}"
-    
-    # Đảm bảo không trùng (retry nếu cần)
-    while payments_collection.find_one({'_id': payment_id}):
-        payment_id = f"P{uuid.uuid4().hex[:8].upper()}"
-    
-    # Tạo payment record
-    new_payment = {
-        '_id': payment_id,
-        'tenant_id': tenant_id,
-        'amount': amount,
-        'method': 'vnpay',  # Mặc định dùng VNpay cho deposit
-        'payment_date': datetime.datetime.now().strftime('%Y-%m-%d'),
-        'status': 'pending',
-        'payment_type': data['payment_type'],
-        'booking_id': data.get('booking_id'),
-        'contract_id': data.get('contract_id'),
-        'bill_id': None  # Deposit không liên kết với bill
-    }
-    
+    data = request.get_json() or {}
+
+    required_fields = ["amount", "payment_type"]
+    missing = [f for f in required_fields if not data.get(f)]
+    if missing:
+        return jsonify({"message": f"Thiếu trường {', '.join(missing)}!"}), 400
+
+    if data["payment_type"] not in ["booking", "contract"]:
+        return jsonify({"message": 'payment_type phải là "booking" hoặc "contract"!'}), 400
+
+    if data["payment_type"] == "booking" and not data.get("booking_id"):
+        return jsonify({"message": "Thiếu trường booking_id!"}), 400
+    if data["payment_type"] == "contract" and not data.get("contract_id"):
+        return jsonify({"message": "Thiếu trường contract_id!"}), 400
+
     try:
-        payments_collection.insert_one(new_payment)
-        new_payment['id'] = new_payment['_id']
-        
-        return jsonify({
-            'message': 'Tạo payment tiền cọc thành công!',
-            'payment': new_payment
-        }), 201
-    except Exception as e:
-        return jsonify({'message': f'Lỗi tạo payment: {str(e)}'}), 500
+        amount = float(data["amount"])
+    except Exception:
+        return jsonify({"message": "Số tiền không hợp lệ!"}), 400
+    if amount <= 0:
+        return jsonify({"message": "Số tiền phải lớn hơn 0!"}), 400
+
+    tenant_id = current_user.get("user_id") or current_user.get("_id")
+    if not tenant_id:
+        return jsonify({"message": "Không tìm thấy tenant_id!"}), 400
+
+    payment_id = f"P{uuid.uuid4().hex[:10].upper()}"
+    while payments_collection.find_one({"_id": payment_id}):
+        payment_id = f"P{uuid.uuid4().hex[:10].upper()}"
+
+    new_payment = {
+        "_id": payment_id,
+        "payment_type": data["payment_type"],
+        "booking_id": data.get("booking_id"),
+        "contract_id": data.get("contract_id"),
+        "bill_id": None,
+        "tenant_id": tenant_id,
+        "amount": amount,
+        "currency": "VND",
+        "method": "vnpay",
+        "payment_date": _today_str(),
+        "status": "pending",
+        "created_at": _utc_now_iso(),
+        "updated_at": _utc_now_iso(),
+    }
+
+    payments_collection.insert_one(new_payment)
+    new_payment["id"] = new_payment["_id"]
+    return jsonify({"message": "Tạo payment tiền cọc thành công!", "payment": new_payment}), 201
 
 
+# ---------------------------
+# VNPay deposit flow (booking)
+# ---------------------------
 
-if __name__ == '__main__':
-    import os
+
+@app.route("/api/payments/vnpay/deposit/create", methods=["POST"])
+@token_required
+def vnpay_create_deposit(current_user):
+    data = request.get_json() or {}
+    booking_id = data.get("booking_id")
+    if not booking_id:
+        return jsonify({"message": "Missing booking_id"}), 400
+
+    token = request.headers.get("Authorization") or request.headers.get("authorization")
+    booking = fetch_service_data("booking-service", f"/api/bookings/{booking_id}", token)
+    if not booking:
+        return jsonify({"message": "Booking không tồn tại hoặc không có quyền!"}), 404
+
+    deposit_amount = float(booking.get("deposit_amount") or 0)
+    deposit_status = booking.get("deposit_status")
+    if deposit_amount <= 0:
+        return jsonify({"message": "Booking không có tiền cọc để thanh toán!"}), 400
+    if deposit_status == "paid":
+        return jsonify({"message": "Booking đã thanh toán cọc rồi!"}), 400
+
+    deposit_amount_vnd = int(round(deposit_amount))
+
+    payment_id = f"PAY{uuid.uuid4().hex[:10].upper()}"
+    payment_doc = {
+        "_id": payment_id,
+        "payment_type": "booking_deposit",
+        "booking_id": booking_id,
+        "tenant_id": booking.get("user_id"),
+        "amount": float(deposit_amount_vnd),
+        "amount_vnd": deposit_amount_vnd,
+        "currency": "VND",
+        "method": "vnpay",
+        "provider": "vnpay",
+        "status": "pending",
+        "created_at": _utc_now_iso(),
+        "updated_at": _utc_now_iso(),
+    }
+    payments_collection.insert_one(payment_doc)
+
+    order_info = f"Thanh toan coc booking {booking_id}"
+    payment_url = build_payment_url(
+        base_url=VNPAY_URL,
+        tmn_code=VNPAY_TMN_CODE,
+        secret=VNPAY_HASH_SECRET,
+        txn_ref=payment_id,
+        amount_vnd=deposit_amount_vnd,
+        order_info=order_info,
+        return_url=VNPAY_RETURN_URL,
+        ipn_url=VNPAY_IPN_URL or None,
+        client_ip=_get_client_ip(),
+    )
+
+    return jsonify({"payment_url": payment_url, "payment_id": payment_id, "booking_id": booking_id})
+
+
+# ---------------------------
+# VNPay bill payment flow
+# ---------------------------
+
+
+@app.route("/api/payments/vnpay/bill/create", methods=["POST"])
+@token_required
+def vnpay_create_bill_payment(current_user):
+    data = request.get_json() or {}
+    bill_id = data.get("bill_id") or data.get("billId")
+    if not bill_id:
+        return jsonify({"message": "Missing bill_id"}), 400
+
+    token = request.headers.get("Authorization") or request.headers.get("authorization")
+    bill_data = fetch_service_data("bill-service", f"/api/bills/{bill_id}", token)
+    if not bill_data:
+        return jsonify({"message": "Hóa đơn không tồn tại hoặc không có quyền!"}), 404
+
+    bill = bill_data if isinstance(bill_data, dict) else bill_data.get("bill", bill_data)
+
+    # Authz: only owner or admin
+    tenant_id = current_user.get("user_id") or current_user.get("_id")
+    if current_user.get("role") != "admin" and bill.get("user_id") != tenant_id:
+        return jsonify({"message": "Không có quyền thanh toán hóa đơn này!"}), 403
+
+    status = (bill.get("status") or "").lower()
+    if status == "paid":
+        return jsonify({"message": "Hóa đơn đã thanh toán!"}), 400
+
+    bill_total = float(bill.get("total_amount") or bill.get("total") or 0)
+    already_paid = calculate_total_paid(bill_id)
+    remaining = bill_total - float(already_paid)
+    if remaining <= 0:
+        return jsonify({"message": "Hóa đơn đã thanh toán đủ!"}), 400
+
+    amount_vnd = int(round(remaining))
+
+    payment_id = f"PAY{uuid.uuid4().hex[:10].upper()}"
+    payment_doc = {
+        "_id": payment_id,
+        "payment_type": "bill_payment",
+        "bill_id": bill_id,
+        "tenant_id": str(tenant_id),
+        "amount": float(amount_vnd),
+        "amount_vnd": amount_vnd,
+        "bill_total": bill_total,
+        "currency": "VND",
+        "method": "vnpay",
+        "provider": "vnpay",
+        "status": "pending",
+        "created_at": _utc_now_iso(),
+        "updated_at": _utc_now_iso(),
+    }
+    payments_collection.insert_one(payment_doc)
+
+    order_info = f"Thanh toan hoa don {bill_id}"
+    payment_url = build_payment_url(
+        base_url=VNPAY_URL,
+        tmn_code=VNPAY_TMN_CODE,
+        secret=VNPAY_HASH_SECRET,
+        txn_ref=payment_id,
+        amount_vnd=amount_vnd,
+        order_info=order_info,
+        return_url=VNPAY_RETURN_URL,
+        ipn_url=VNPAY_IPN_URL or None,
+        client_ip=_get_client_ip(),
+    )
+
+    return jsonify({"payment_url": payment_url, "payment_id": payment_id, "bill_id": bill_id})
+
+
+# ---------------------------
+# VNPay room-reservation deposit flow
+# ---------------------------
+
+
+@app.route("/api/payments/vnpay/room-deposit/create", methods=["POST"])
+@token_required
+def vnpay_create_room_deposit(current_user):
+    data = request.get_json() or {}
+    room_id = data.get("room_id")
+    if not room_id:
+        return jsonify({"message": "Missing room_id"}), 400
+
+    room = fetch_service_data("room-service", f"/api/rooms/{room_id}")
+    if not room:
+        return jsonify({"message": "Phòng không tồn tại!"}), 404
+
+    if room.get("status") != "available":
+        return jsonify({"message": "Phòng không còn trống để giữ!"}), 400
+
+    deposit_amount = float(room.get("deposit") or 0)
+    if deposit_amount <= 0:
+        return jsonify({"message": "Phòng này chưa cấu hình tiền cọc!"}), 400
+
+    tenant_id = current_user.get("user_id") or current_user.get("_id")
+    if not tenant_id:
+        return jsonify({"message": "Không tìm thấy tenant_id!"}), 400
+
+    deposit_amount_vnd = int(round(deposit_amount))
+
+    payment_id = f"PAY{uuid.uuid4().hex[:10].upper()}"
+    payment_doc = {
+        "_id": payment_id,
+        "payment_type": "room_reservation_deposit",
+        "room_id": room_id,
+        "tenant_id": str(tenant_id),
+        "amount": float(deposit_amount_vnd),
+        "amount_vnd": deposit_amount_vnd,
+        "currency": "VND",
+        "method": "vnpay",
+        "provider": "vnpay",
+        "status": "pending",
+        "created_at": _utc_now_iso(),
+        "updated_at": _utc_now_iso(),
+    }
+    payments_collection.insert_one(payment_doc)
+
+    # Hold room immediately so others can't pay for the same room.
+    if not hold_room_reservation(room_id, tenant_id, payment_id):
+        payments_collection.delete_one({"_id": payment_id})
+        return jsonify({"message": "Không thể giữ phòng. Vui lòng thử lại!"}), 409
+
+    order_info = f"Thanh toan coc giu phong {room_id}"
+    payment_url = build_payment_url(
+        base_url=VNPAY_URL,
+        tmn_code=VNPAY_TMN_CODE,
+        secret=VNPAY_HASH_SECRET,
+        txn_ref=payment_id,
+        amount_vnd=deposit_amount_vnd,
+        order_info=order_info,
+        return_url=VNPAY_RETURN_URL,
+        ipn_url=VNPAY_IPN_URL or None,
+        client_ip=_get_client_ip(),
+    )
+
+    return jsonify({"payment_url": payment_url, "payment_id": payment_id, "room_id": room_id})
+
+
+@app.route("/api/payments/vnpay/ipn", methods=["GET"])
+def vnpay_ipn():
+    vnp_params = request.args.to_dict()
+
+    if not validate_return_or_ipn(vnp_params, VNPAY_HASH_SECRET):
+        return jsonify({"RspCode": "97", "Message": "Invalid Signature"})
+
+    payment_id = vnp_params.get("vnp_TxnRef")
+    response_code = vnp_params.get("vnp_ResponseCode")
+    transaction_id = vnp_params.get("vnp_TransactionNo")
+    vnp_amount_raw = vnp_params.get("vnp_Amount", "0")
+    try:
+        amount_received_vnd = int(vnp_amount_raw) // 100
+    except Exception:
+        amount_received_vnd = 0
+
+    payment = payments_collection.find_one({"_id": payment_id})
+    if not payment:
+        return jsonify({"RspCode": "01", "Message": "Order not found"})
+
+    if payment.get("method") != "vnpay":
+        return jsonify({"RspCode": "01", "Message": "Order not found"})
+
+    if payment.get("status") == "completed":
+        return jsonify({"RspCode": "02", "Message": "Order already confirmed"})
+
+    if payment.get("status") == "failed":
+        return jsonify({"RspCode": "00", "Message": "Confirm Success"})
+
+    expected_amount_vnd = int(round(float(payment.get("amount_vnd") or payment.get("amount") or 0)))
+    if expected_amount_vnd <= 0 or amount_received_vnd != expected_amount_vnd:
+        payments_collection.update_one(
+            {"_id": payment_id},
+            {
+                "$set": {
+                    "status": "failed",
+                    "provider": "vnpay",
+                    "provider_txn_id": transaction_id,
+                    "transaction_id": transaction_id,
+                    "provider_response_code": response_code,
+                    "amount_received_vnd": amount_received_vnd,
+                    "vnpay_response": vnp_params,
+                    "updated_at": _utc_now_iso(),
+                }
+            },
+        )
+        return jsonify({"RspCode": "04", "Message": "Invalid amount"})
+
+    if response_code == "00":
+        payments_collection.update_one(
+            {"_id": payment_id},
+            {
+                "$set": {
+                    "status": "completed",
+                    "transaction_id": transaction_id,
+                    "provider": "vnpay",
+                    "provider_txn_id": transaction_id,
+                    "provider_response_code": response_code,
+                    "amount_received_vnd": amount_received_vnd,
+                    "vnpay_response": vnp_params,
+                    "updated_at": _utc_now_iso(),
+                }
+            },
+        )
+
+        if payment.get("payment_type") in ["booking", "booking_deposit"] and payment.get("booking_id"):
+            update_booking_deposit_status(
+                payment["booking_id"],
+                "paid",
+                transaction_id,
+                payment_id=payment_id,
+            )
+
+        if payment.get("payment_type") == "room_reservation_deposit" and payment.get("room_id"):
+            confirm_room_reservation(payment["room_id"], payment_id)
+
+        if payment.get("payment_type") == "bill_payment" and payment.get("bill_id"):
+            bill_total = payment.get("bill_total") or payment.get("amount") or amount_received_vnd
+            update_bill_status_if_paid(payment["bill_id"], bill_total)
+            if payment.get("tenant_id"):
+                send_notification(
+                    payment.get("tenant_id"),
+                    "Thanh toán thành công",
+                    f"Hóa đơn {payment.get('bill_id')} đã được thanh toán thành công.",
+                    "payment",
+                    {"bill_id": payment.get("bill_id"), "payment_id": payment_id},
+                )
+
+        return jsonify({"RspCode": "00", "Message": "Confirm Success"})
+
+    payments_collection.update_one(
+        {"_id": payment_id},
+        {
+            "$set": {
+                "status": "failed",
+                "transaction_id": transaction_id,
+                "provider": "vnpay",
+                "provider_txn_id": transaction_id,
+                "provider_response_code": response_code,
+                "amount_received_vnd": amount_received_vnd,
+                "vnpay_response": vnp_params,
+                "updated_at": _utc_now_iso(),
+            }
+        },
+    )
+
+    # Release held room if this is a room reservation deposit.
+    if payment.get("payment_type") == "room_reservation_deposit" and payment.get("room_id"):
+        release_room_reservation(payment["room_id"], payment_id)
+
+    return jsonify({"RspCode": "00", "Message": "Confirm Success"})
+
+
+@app.route("/api/payments/vnpay/return", methods=["GET"])
+def vnpay_return():
+    # VNPay redirects the user back to this URL in the browser.
+    # Always redirect back to the frontend so the user doesn't see raw JSON.
+    vnp_params = request.args.to_dict()
+
+    response_code = vnp_params.get("vnp_ResponseCode") or ""
+    txn_ref = vnp_params.get("vnp_TxnRef") or ""
+
+    signature_ok = validate_return_or_ipn(vnp_params, VNPAY_HASH_SECRET)
+
+    mode = (VNPAY_CONFIRM_MODE or "return").lower()
+
+    # Best-effort update of payment record (return can arrive before/without IPN)
+    # Modes:
+    # - return: confirm paid on return signature+amount
+    # - querydr: confirm paid only when QueryDR verifies
+    # - ipn: keep pending on return; confirm only on IPN
+    verified = False
+    verified_code = ""
+    verified_txn_status = ""
+
+    if txn_ref:
+        set_fields = {
+            "vnpay_return": vnp_params,
+            "provider": "vnpay",
+            "provider_response_code": response_code,
+            "updated_at": _utc_now_iso(),
+        }
+
+        transaction_id = vnp_params.get("vnp_TransactionNo")
+        if transaction_id:
+            set_fields["transaction_id"] = transaction_id
+            set_fields["provider_txn_id"] = transaction_id
+
+        if not signature_ok:
+            set_fields["status"] = "failed"
+            payments_collection.update_one({"_id": txn_ref}, {"$set": set_fields})
+        else:
+            if response_code == "00":
+                payment = payments_collection.find_one({"_id": txn_ref})
+
+                # Mode: ipn -> don't confirm on return.
+                if mode == "ipn":
+                    set_fields["status"] = "pending"
+                    payments_collection.update_one({"_id": txn_ref}, {"$set": set_fields})
+
+                # Mode: return -> confirm based on signature + amount match.
+                elif mode == "return":
+                    if payment:
+                        expected_amount_vnd = int(
+                            round(float(payment.get("amount_vnd") or payment.get("amount") or 0))
+                        )
+                        vnp_amount_raw = vnp_params.get("vnp_Amount", "0")
+                        try:
+                            amount_received_vnd = int(vnp_amount_raw) // 100
+                        except Exception:
+                            amount_received_vnd = 0
+
+                        if amount_received_vnd:
+                            set_fields["amount_received_vnd"] = amount_received_vnd
+
+                        if expected_amount_vnd > 0 and amount_received_vnd == expected_amount_vnd:
+                            verified = True
+                            set_fields["status"] = "completed"
+                            payments_collection.update_one({"_id": txn_ref}, {"$set": set_fields})
+
+                            if payment.get("payment_type") in ["booking", "booking_deposit"] and payment.get(
+                                "booking_id"
+                            ):
+                                update_booking_deposit_status(
+                                    payment["booking_id"],
+                                    "paid",
+                                    transaction_id,
+                                    payment_id=txn_ref,
+                                )
+                            if payment.get("payment_type") == "bill_payment" and payment.get("bill_id"):
+                                bill_total = payment.get("bill_total") or payment.get("amount") or amount_received_vnd
+                                update_bill_status_if_paid(payment["bill_id"], bill_total)
+                                if payment.get("tenant_id"):
+                                    send_notification(
+                                        payment.get("tenant_id"),
+                                        "Thanh toán thành công",
+                                        f"Hóa đơn {payment.get('bill_id')} đã được thanh toán thành công.",
+                                        "payment",
+                                        {"bill_id": payment.get("bill_id"), "payment_id": txn_ref},
+                                    )
+                            if payment.get("payment_type") == "room_reservation_deposit" and payment.get("room_id"):
+                                confirm_room_reservation(payment["room_id"], txn_ref)
+                                # Auto-create contract
+                                auto_create_contract(
+                                    room_id=payment["room_id"],
+                                    tenant_id=payment.get("tenant_id"),
+                                    payment_id=txn_ref
+                                )
+                        else:
+                            set_fields["status"] = "failed"
+                            payments_collection.update_one({"_id": txn_ref}, {"$set": set_fields})
+                            if payment.get("payment_type") == "room_reservation_deposit" and payment.get("room_id"):
+                                release_room_reservation(payment["room_id"], txn_ref)
+                    else:
+                        payments_collection.update_one({"_id": txn_ref}, {"$set": set_fields})
+
+                # Default: querydr
+                else:
+                    if payment:
+                        transaction_date = (
+                            vnp_params.get("vnp_PayDate")
+                            or vnp_params.get("vnp_TransactionDate")
+                            or vnp_params.get("vnp_CreateDate")
+                            or ""
+                        )
+                        if payment.get("payment_type") == "room_reservation_deposit":
+                            order_info = f"Thanh toan coc giu phong {payment.get('room_id') or ''}".strip()
+                        else:
+                            order_info = f"Thanh toan coc booking {payment.get('booking_id') or ''}".strip()
+                        request_id = uuid.uuid4().hex
+
+                        verified, qdr = querydr_verify_transaction(
+                            api_url=VNPAY_API_URL,
+                            tmn_code=VNPAY_TMN_CODE,
+                            secret=VNPAY_HASH_SECRET,
+                            txn_ref=txn_ref,
+                            order_info=order_info,
+                            transaction_date=transaction_date,
+                            client_ip=_get_client_ip(),
+                            request_id=request_id,
+                        )
+                        verified_code = qdr.get("vnp_ResponseCode") or ""
+                        verified_txn_status = qdr.get("vnp_TransactionStatus") or ""
+                        set_fields["vnpay_querydr"] = qdr
+
+                        expected_amount_vnd = int(
+                            round(float(payment.get("amount_vnd") or payment.get("amount") or 0))
+                        )
+                        vnp_amount_raw = vnp_params.get("vnp_Amount", "0")
+                        try:
+                            amount_received_vnd = int(vnp_amount_raw) // 100
+                        except Exception:
+                            amount_received_vnd = 0
+                        if amount_received_vnd:
+                            set_fields["amount_received_vnd"] = amount_received_vnd
+
+                        if verified and expected_amount_vnd > 0 and amount_received_vnd == expected_amount_vnd:
+                            set_fields["status"] = "completed"
+                            payments_collection.update_one({"_id": txn_ref}, {"$set": set_fields})
+
+                            if payment.get("payment_type") in ["booking", "booking_deposit"] and payment.get(
+                                "booking_id"
+                            ):
+                                update_booking_deposit_status(
+                                    payment["booking_id"],
+                                    "paid",
+                                    transaction_id,
+                                    payment_id=txn_ref,
+                                )
+                            if payment.get("payment_type") == "room_reservation_deposit" and payment.get("room_id"):
+                                confirm_room_reservation(payment["room_id"], txn_ref)
+                            if payment.get("payment_type") == "bill_payment" and payment.get("bill_id"):
+                                bill_total = payment.get("bill_total") or payment.get("amount") or amount_received_vnd
+                                update_bill_status_if_paid(payment["bill_id"], bill_total)
+                                if payment.get("tenant_id"):
+                                    send_notification(
+                                        payment.get("tenant_id"),
+                                        "Thanh toán thành công",
+                                        f"Hóa đơn {payment.get('bill_id')} đã được thanh toán thành công.",
+                                        "payment",
+                                        {"bill_id": payment.get("bill_id"), "payment_id": txn_ref},
+                                    )
+                        else:
+                            set_fields["status"] = "pending"
+                            payments_collection.update_one({"_id": txn_ref}, {"$set": set_fields})
+                    else:
+                        payments_collection.update_one({"_id": txn_ref}, {"$set": set_fields})
+            else:
+                # 24 = user cancelled, others = failed
+                set_fields["status"] = "failed"
+                payments_collection.update_one({"_id": txn_ref}, {"$set": set_fields})
+
+    # Figure out booking_id / room_id for nicer UX
+    booking_id = ""
+    room_id = ""
+    bill_id = ""
+    is_room_reservation = False
+    if txn_ref:
+        payment = payments_collection.find_one({"_id": txn_ref})
+        if payment:
+            booking_id = str(payment.get("booking_id") or "")
+            room_id = str(payment.get("room_id") or "")
+            bill_id = str(payment.get("bill_id") or "")
+            is_room_reservation = payment.get("payment_type") == "room_reservation_deposit"
+
+    frontend_redirect_base = "/user/home.html"
+
+    if not signature_ok:
+        if is_room_reservation and room_id and txn_ref:
+            release_room_reservation(room_id, txn_ref)
+        return redirect(f"{frontend_redirect_base}?vnpay=error&code=97&payment_id={txn_ref}")
+
+    # If we already marked as failed (e.g., amount mismatch), don't show pending.
+    if response_code == "00" and txn_ref:
+        payment = payments_collection.find_one({"_id": txn_ref})
+        if payment and payment.get("status") == "failed":
+            suffix = f"payment_id={txn_ref}"
+            if booking_id:
+                suffix += f"&booking_id={booking_id}"
+            if room_id:
+                suffix += f"&room_id={room_id}"
+            return redirect(f"{frontend_redirect_base}?vnpay=failed&code=failed&{suffix}")
+
+    if response_code == "00":
+        # Success (user-facing).
+        # Behavior depends on confirmation mode.
+        suffix = f"payment_id={txn_ref}"
+        if booking_id:
+            suffix += f"&booking_id={booking_id}"
+        if room_id:
+            suffix += f"&room_id={room_id}"
+        if bill_id:
+            suffix += f"&bill_id={bill_id}"
+        if mode == "return" and verified:
+            # Finalize reservation if this is room deposit.
+            if is_room_reservation and room_id:
+                confirm_room_reservation(room_id, txn_ref)
+                # Auto-create contract
+                if payment:
+                    auto_create_contract(room_id, payment.get("tenant_id"), txn_ref)
+            return redirect(f"{frontend_redirect_base}?vnpay=success&{suffix}")
+        if mode == "ipn":
+            return redirect(f"{frontend_redirect_base}?vnpay=pending&code=ipn&{suffix}")
+        if verified:
+            if is_room_reservation and room_id:
+                confirm_room_reservation(room_id, txn_ref)
+                # Auto-create contract
+                if payment:
+                    auto_create_contract(room_id, payment.get("tenant_id"), txn_ref)
+            return redirect(f"{frontend_redirect_base}?vnpay=success&{suffix}")
+        code = verified_code or verified_txn_status or "pending"
+        return redirect(f"{frontend_redirect_base}?vnpay=pending&code={code}&{suffix}")
+
+    if response_code == "24":
+        suffix = f"payment_id={txn_ref}"
+        if booking_id:
+            suffix += f"&booking_id={booking_id}"
+        if room_id:
+            suffix += f"&room_id={room_id}"
+        if is_room_reservation and room_id and txn_ref:
+            release_room_reservation(room_id, txn_ref)
+        return redirect(f"{frontend_redirect_base}?vnpay=cancel&{suffix}")
+
+    suffix = f"payment_id={txn_ref}"
+    if booking_id:
+        suffix += f"&booking_id={booking_id}"
+    if room_id:
+        suffix += f"&room_id={room_id}"
+    if bill_id:
+        suffix += f"&bill_id={bill_id}"
+    if is_room_reservation and room_id and txn_ref:
+        release_room_reservation(room_id, txn_ref)
+    return redirect(f"{frontend_redirect_base}?vnpay=failed&code={response_code}&{suffix}")
+
+
+@app.route("/api/payments/vnpay/verify/<payment_id>", methods=["GET"])
+@token_required
+def vnpay_verify_payment(current_user, payment_id):
+    """Verify a VNPay payment.
+
+    Used by frontend polling when return page shows `vnpay=pending`.
+    """
+
+    payment = payments_collection.find_one({"_id": payment_id})
+    if not payment:
+        return jsonify({"message": "Thanh toán không tồn tại!"}), 404
+
+    # Permission: admin can verify any; user can verify own payments.
+    if current_user.get("role") != "admin":
+        me = current_user.get("user_id") or current_user.get("_id")
+        if payment.get("tenant_id") != me:
+            return jsonify({"message": "Không có quyền!"}), 403
+
+    # If already completed/failed, return current state.
+    # For completed booking deposits, also re-sync booking-service (idempotent).
+    if payment.get("status") in ("completed", "failed"):
+        if payment.get("status") == "completed":
+            if payment.get("payment_type") in ("booking_deposit", "booking") and payment.get("booking_id"):
+                update_booking_deposit_status(
+                    payment["booking_id"],
+                    "paid",
+                    payment.get("transaction_id"),
+                    payment_id=payment_id,
+                )
+            if payment.get("payment_type") == "room_reservation_deposit" and payment.get("room_id"):
+                confirm_room_reservation(payment["room_id"], payment_id)
+
+        if payment.get("status") == "failed":
+            if payment.get("payment_type") == "room_reservation_deposit" and payment.get("room_id"):
+                release_room_reservation(payment["room_id"], payment_id)
+
+        return (
+            jsonify(
+                {
+                    "payment_id": payment_id,
+                    "status": payment.get("status"),
+                    "booking_id": payment.get("booking_id"),
+                    "room_id": payment.get("room_id"),
+                    "provider_response_code": payment.get("provider_response_code"),
+                }
+            ),
+            200,
+        )
+
+    mode = (VNPAY_CONFIRM_MODE or "return").lower()
+
+    vnp_return = payment.get("vnpay_return") or {}
+
+    # Mode: return -> finalize using stored return params (signature + amount match)
+    if mode == "return":
+        response_code = vnp_return.get("vnp_ResponseCode") or ""
+        signature_ok = validate_return_or_ipn(vnp_return, VNPAY_HASH_SECRET) if vnp_return else False
+
+        if response_code == "00" and signature_ok:
+            expected_amount_vnd = int(round(float(payment.get("amount_vnd") or payment.get("amount") or 0)))
+            vnp_amount_raw = vnp_return.get("vnp_Amount", "0")
+            try:
+                amount_received_vnd = int(vnp_amount_raw) // 100
+            except Exception:
+                amount_received_vnd = 0
+
+            if expected_amount_vnd > 0 and amount_received_vnd == expected_amount_vnd:
+                set_fields = {
+                    "status": "completed",
+                    "amount_received_vnd": amount_received_vnd,
+                    "updated_at": _utc_now_iso(),
+                }
+                transaction_id = vnp_return.get("vnp_TransactionNo")
+                if transaction_id:
+                    set_fields["transaction_id"] = transaction_id
+                    set_fields["provider_txn_id"] = transaction_id
+
+                payments_collection.update_one({"_id": payment_id}, {"$set": set_fields})
+                updated = payments_collection.find_one({"_id": payment_id}) or payment
+
+                if updated.get("payment_type") in ("booking_deposit", "booking") and updated.get("booking_id"):
+                    update_booking_deposit_status(
+                        updated["booking_id"],
+                        "paid",
+                        transaction_id,
+                        payment_id=payment_id,
+                    )
+
+                if updated.get("payment_type") == "room_reservation_deposit" and updated.get("room_id"):
+                    confirm_room_reservation(updated["room_id"], payment_id)
+
+                return (
+                    jsonify(
+                        {
+                            "payment_id": payment_id,
+                            "booking_id": updated.get("booking_id"),
+                            "room_id": updated.get("room_id"),
+                            "status": "completed",
+                            "verified": True,
+                            "provider_response_code": "00",
+                            "transaction_status": "00",
+                        }
+                    ),
+                    200,
+                )
+
+        # Still pending in return mode
+        return (
+            jsonify(
+                {
+                    "payment_id": payment_id,
+                    "booking_id": payment.get("booking_id"),
+                    "room_id": payment.get("room_id"),
+                    "status": payment.get("status") or "pending",
+                    "verified": False,
+                    "provider_response_code": response_code or payment.get("provider_response_code"),
+                }
+            ),
+            200,
+        )
+    transaction_date = (
+        vnp_return.get("vnp_PayDate")
+        or vnp_return.get("vnp_TransactionDate")
+        or vnp_return.get("vnp_CreateDate")
+        or ""
+    )
+
+    # Without a transaction date, QueryDR can't be performed reliably.
+    if not transaction_date:
+        return (
+            jsonify(
+                {
+                    "payment_id": payment_id,
+                    "status": "pending",
+                    "verified": False,
+                    "reason": "missing_transaction_date",
+                }
+            ),
+            200,
+        )
+
+    order_info = ""
+    if payment.get("payment_type") in ("booking_deposit", "booking") and payment.get("booking_id"):
+        order_info = f"Thanh toan coc booking {payment.get('booking_id')}".strip()
+    elif payment.get("payment_type") == "room_reservation_deposit" and payment.get("room_id"):
+        order_info = f"Thanh toan coc giu phong {payment.get('room_id')}".strip()
+    else:
+        order_info = f"Thanh toan {payment_id}".strip()
+
+    verified, qdr = querydr_verify_transaction(
+        api_url=VNPAY_API_URL,
+        tmn_code=VNPAY_TMN_CODE,
+        secret=VNPAY_HASH_SECRET,
+        txn_ref=payment_id,
+        order_info=order_info,
+        transaction_date=transaction_date,
+        client_ip=_get_client_ip(),
+        request_id=uuid.uuid4().hex,
+    )
+
+    set_fields = {
+        "vnpay_querydr": qdr,
+        "updated_at": _utc_now_iso(),
+    }
+
+    if verified:
+        # Extra safety: amount check if we have vnp_Amount in return.
+        expected_amount_vnd = int(round(float(payment.get("amount_vnd") or payment.get("amount") or 0)))
+        vnp_amount_raw = vnp_return.get("vnp_Amount", "0")
+        try:
+            amount_received_vnd = int(vnp_amount_raw) // 100
+        except Exception:
+            amount_received_vnd = 0
+
+        if expected_amount_vnd > 0 and amount_received_vnd == expected_amount_vnd:
+            set_fields["status"] = "completed"
+            if amount_received_vnd:
+                set_fields["amount_received_vnd"] = amount_received_vnd
+        else:
+            # QueryDR says OK but our amount check fails => keep pending.
+            verified = False
+            set_fields["status"] = "pending"
+            set_fields["verify_mismatch"] = {
+                "expected_amount_vnd": expected_amount_vnd,
+                "amount_received_vnd": amount_received_vnd,
+            }
+    else:
+        # Still pending or not successful.
+        set_fields["status"] = "pending"
+
+    payments_collection.update_one({"_id": payment_id}, {"$set": set_fields})
+
+    updated = payments_collection.find_one({"_id": payment_id}) or payment
+    status = updated.get("status")
+
+    # If we just completed a booking deposit, sync booking-service.
+    if status == "completed" and updated.get("payment_type") in ("booking_deposit", "booking") and updated.get(
+        "booking_id"
+    ):
+        transaction_id = (updated.get("transaction_id") or (vnp_return.get("vnp_TransactionNo")))
+        update_booking_deposit_status(
+            updated["booking_id"],
+            "paid",
+            transaction_id,
+            payment_id=payment_id,
+        )
+
+    if status == "completed" and updated.get("payment_type") == "room_reservation_deposit" and updated.get("room_id"):
+        confirm_room_reservation(updated["room_id"], payment_id)
+
+    return (
+        jsonify(
+            {
+                "payment_id": payment_id,
+                "booking_id": updated.get("booking_id"),
+                "room_id": updated.get("room_id"),
+                "status": status,
+                "verified": bool(status == "completed"),
+                "provider_response_code": (updated.get("vnpay_querydr") or {}).get("vnp_ResponseCode")
+                or updated.get("provider_response_code"),
+                "transaction_status": (updated.get("vnpay_querydr") or {}).get("vnp_TransactionStatus"),
+            }
+        ),
+        200,
+    )
+
+
+if __name__ == "__main__":
     register_service()
-    debug_mode = os.getenv('FLASK_DEBUG', 'false').lower() == 'true'
-    app.run(host='0.0.0.0', port=SERVICE_PORT, debug=debug_mode)
+    debug_mode = os.getenv("FLASK_DEBUG", "false").lower() == "true"
+    app.run(host="0.0.0.0", port=SERVICE_PORT, debug=debug_mode)
 

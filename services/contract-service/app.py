@@ -1,411 +1,319 @@
+"""Contract Service - Main Application"""
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import datetime
 import uuid
-import jwt
-from functools import wraps
 import requests
-from bson import ObjectId
-from config import JWT_SECRET, SERVICE_NAME, SERVICE_PORT, CONSUL_HOST, CONSUL_PORT, INTERNAL_API_KEY
+import atexit
+from config import Config
 from model import contracts_collection
-from service_registry import register_service
+from decorators import token_required, admin_required, internal_api_required
+from service_registry import register_service, deregister_service
+from services import get_service_url
 
 app = Flask(__name__)
+app.config.from_object(Config)
 CORS(app)
+atexit.register(deregister_service)
 
-# Load configuration
-app.config['SECRET_KEY'] = JWT_SECRET
-app.config['SERVICE_NAME'] = SERVICE_NAME
-app.config['SERVICE_PORT'] = SERVICE_PORT
 
-# Decorator xác thực token
-def token_required(f):
-    @wraps(f)
-    def decorated(*args, **kwargs):
-        # Try both 'Authorization' and 'authorization' (nginx may lowercase headers)
-        token = request.headers.get('Authorization') or request.headers.get('authorization')
-        
-        if not token:
-            return jsonify({'message': 'Token không tồn tại!'}), 401
-        
-        try:
-            if token.startswith('Bearer '):
-                token = token[7:]
-            elif token.startswith('bearer '):
-                token = token[7:]
-            
-            data = jwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'])
-            current_user = data
-            
-        except jwt.ExpiredSignatureError:
-            return jsonify({'message': 'Token đã hết hạn!'}), 401
-        except jwt.InvalidTokenError:
-            return jsonify({'message': 'Token không hợp lệ!'}), 401
-        
-        return f(current_user, *args, **kwargs)
-    
-    return decorated
+def get_timestamp():
+    return datetime.datetime.utcnow().isoformat()
 
-# Decorator kiểm tra quyền admin
-def admin_required(f):
-    @wraps(f)
-    def decorated(current_user, *args, **kwargs):
-        if current_user.get('role') != 'admin':
-            return jsonify({'message': 'Yêu cầu quyền admin!'}), 403
-        return f(current_user, *args, **kwargs)
-    return decorated
 
-# Decorator for internal API calls
-def internal_api_required(f):
-    @wraps(f)
-    def decorated(*args, **kwargs):
-        token = request.headers.get('X-Internal-Api-Key')
-        if not token or token != INTERNAL_API_KEY:
-            return jsonify({'message': 'Unauthorized internal request'}), 403
-        return f(*args, **kwargs)
-    return decorated
+def generate_contract_id():
+    return f"CTR{uuid.uuid4().hex[:8].upper()}"
 
-# Helper function: Get service URL from Consul
-def get_service_url(service_name):
-    try:
-        consul_url = f"http://{CONSUL_HOST}:{CONSUL_PORT}/v1/catalog/service/{service_name}"
-        response = requests.get(consul_url, timeout=5)
-        if response.ok and response.json():
-            service = response.json()[0]
-            return f"http://{service['ServiceAddress']}:{service['ServicePort']}"
-        return None
-    except Exception as e:
-        print(f"Error getting service URL: {e}")
-        return None
 
-# Helper function: Convert string to ObjectId
-def to_object_id(id_value):
-    """Convert string ID to ObjectId if needed"""
-    if isinstance(id_value, ObjectId):
-        return id_value
-    if isinstance(id_value, str):
-        try:
-            return ObjectId(id_value)
-        except Exception:
-            return id_value  # Return as-is if conversion fails
-    return id_value
+def format_contract(contract):
+    return {
+        '_id': contract['_id'],
+        'room_id': contract.get('room_id', ''),
+        'user_id': contract.get('user_id', ''),
+        'start_date': contract.get('start_date', ''),
+        'end_date': contract.get('end_date', ''),
+        'monthly_rent': contract.get('monthly_rent', 0),
+        'deposit_amount': contract.get('deposit_amount', 0),
+        'deposit_status': contract.get('deposit_status', 'pending'),
+        'payment_day': contract.get('payment_day', 5),
+        'status': contract.get('status', 'active'),
+        'notes': contract.get('notes', ''),
+        'created_at': contract.get('created_at'),
+        'updated_at': contract.get('updated_at')
+    }
 
-# Helper function: Check if room exists and is available
-def check_room_availability(room_id, token):
-    try:
-        room_service_url = get_service_url('room-service')
-        if not room_service_url:
-            return None, "Không thể kết nối tới Room Service"
-        
-        # Ensure token has Bearer prefix
-        if token and not token.startswith('Bearer ') and not token.startswith('bearer '):
-            auth_token = f'Bearer {token}'
-        else:
-            auth_token = token
-        
-        response = requests.get(
-            f"{room_service_url}/api/rooms/{room_id}",
-            headers={'Authorization': auth_token},
-            timeout=5
-        )
-        
-        if response.ok:
-            room = response.json()
-            return room, None
-        else:
-            return None, "Phòng không tồn tại"
-    except Exception as e:
-        return None, f"Lỗi kết nối Room Service: {str(e)}"
 
-# Helper function: Update room status
-def update_room_status(room_id, status, tenant_id, token):
-    try:
-        room_service_url = get_service_url('room-service')
-        if not room_service_url:
-            return False
-        
-        # Ensure token has Bearer prefix
-        if token and not token.startswith('Bearer ') and not token.startswith('bearer '):
-            auth_token = f'Bearer {token}'
-        else:
-            auth_token = token
-        
-        update_data = {'status': status}
-        if tenant_id:
-            update_data['tenant_id'] = str(tenant_id) if isinstance(tenant_id, ObjectId) else tenant_id
-        
-        response = requests.put(
-            f"{room_service_url}/api/rooms/{room_id}",
-            json=update_data,
-            headers={
-                'Authorization': auth_token,
-                'Content-Type': 'application/json'
-            },
-            timeout=5
-        )
-        
-        return response.ok
-    except Exception as e:
-        print(f"Error updating room status: {e}")
-        return False
-
-# Helper function: Get tenant info from tenant-service
-def get_tenant_info(tenant_id, token):
-    """Get tenant information from tenant-service"""
-    try:
-        tenant_service_url = get_service_url('tenant-service')
-        if not tenant_service_url:
-            return None
-        
-        # Ensure token has Bearer prefix
-        if token and not token.startswith('Bearer ') and not token.startswith('bearer '):
-            auth_token = f'Bearer {token}'
-        else:
-            auth_token = token
-        
-        # Convert tenant_id to string if ObjectId
-        tenant_id_str = str(tenant_id) if isinstance(tenant_id, ObjectId) else tenant_id
-        
-        response = requests.get(
-            f"{tenant_service_url}/api/tenants/{tenant_id_str}",
-            headers={'Authorization': auth_token},
-            timeout=5
-        )
-        
-        if response.ok:
-            return response.json()
-        return None
-    except Exception as e:
-        print(f"Error getting tenant info: {e}")
-        return None
-
-# Health check endpoint
 @app.route('/health', methods=['GET'])
 def health():
-    return jsonify({'status': 'healthy', 'service': SERVICE_NAME}), 200
+    return jsonify({'status': 'healthy', 'service': Config.SERVICE_NAME}), 200
 
-# ============== CONTRACT APIs ==============
 
-# API Lấy danh sách hợp đồng
+# ============== Internal API (service-to-service) ==============
+
+@app.route('/internal/contracts', methods=['GET'])
+@internal_api_required
+def get_contracts_internal():
+    """Get all contracts (for internal service calls like bill-service)"""
+    query = {}
+    
+    if request.args.get('status'):
+        query['status'] = request.args.get('status')
+    if request.args.get('room_id'):
+        query['room_id'] = request.args.get('room_id')
+    
+    contracts = list(contracts_collection.find(query).sort('created_at', -1))
+    
+    return jsonify({
+        'contracts': [format_contract(c) for c in contracts],
+        'total': len(contracts)
+    }), 200
+
+
+# ============== External API (JWT required) ==============
+
 @app.route('/api/contracts', methods=['GET'])
 @token_required
-@admin_required
 def get_contracts(current_user):
-    try:
-        status = request.args.get('status', '').strip()
-        room_id = request.args.get('room_id', '').strip()
-        
-        query = {}
-        if status:
-            query['status'] = status
-        if room_id:
-            query['room_id'] = room_id
-        
-        # Find contracts with query
-        contracts_cursor = contracts_collection.find(query).sort('created_at', -1)
-        contracts = list(contracts_cursor)
-        
-        # Process contracts to add tenant info and format data
-        result_contracts = []
-        token = request.headers.get('Authorization') or request.headers.get('authorization')
-        
-        for contract in contracts:
-            contract_dict = {}
-            # Convert all fields to JSON-serializable format
-            for key, value in contract.items():
-                if isinstance(value, ObjectId):
-                    contract_dict[key] = str(value)
-                elif isinstance(value, datetime.datetime):
-                    contract_dict[key] = value.isoformat()
-                else:
-                    contract_dict[key] = value
-            
-            # Ensure 'id' field exists
-            contract_dict['id'] = contract_dict.get('_id', '')
-            
-            # Lấy thông tin tenant từ tenant-service
-            contract_tenant_id = contract.get('tenant_id')
-            if contract_tenant_id:
-                contract_tenant_id = to_object_id(contract_tenant_id)
-                tenant = get_tenant_info(contract_tenant_id, token)
-                if tenant:
-                    contract_dict['tenant_name'] = tenant.get('name', '')
-                    contract_dict['tenant_phone'] = tenant.get('phone', '')
-                else:
-                    contract_dict['tenant_name'] = ''
-                    contract_dict['tenant_phone'] = ''
-            else:
-                contract_dict['tenant_name'] = ''
-                contract_dict['tenant_phone'] = ''
-            
-            result_contracts.append(contract_dict)
-        
-        return jsonify({
-            'contracts': result_contracts, 
-            'total': len(result_contracts)
-        }), 200
-        
-    except Exception as e:
-        print(f"Error in get_contracts: {str(e)}")
-        import traceback
-        traceback.print_exc()
-        return jsonify({
-            'message': f'Lỗi khi lấy danh sách hợp đồng: {str(e)}',
-            'contracts': [],
-            'total': 0
-        }), 500
+    """Get contracts list (admin sees all, user sees own)"""
+    user_id = current_user.get('user_id') or current_user.get('_id')
+    role = current_user.get('role', '')
+    
+    query = {} if role == 'admin' else {'user_id': user_id}
+    
+    if request.args.get('status'):
+        query['status'] = request.args.get('status')
+    if request.args.get('room_id'):
+        query['room_id'] = request.args.get('room_id')
+    
+    contracts = list(contracts_collection.find(query).sort('created_at', -1))
+    
+    return jsonify({
+        'contracts': [format_contract(c) for c in contracts],
+        'total': len(contracts)
+    }), 200
 
-# API Lấy chi tiết hợp đồng
+
 @app.route('/api/contracts/<contract_id>', methods=['GET'])
 @token_required
 def get_contract(current_user, contract_id):
+    """Get single contract details"""
     contract = contracts_collection.find_one({'_id': contract_id})
-    
     if not contract:
         return jsonify({'message': 'Hợp đồng không tồn tại!'}), 404
     
-    contract['id'] = contract['_id']
+    user_id = current_user.get('user_id') or current_user.get('_id')
+    role = current_user.get('role', '')
     
-    # Lấy thông tin tenant từ tenant-service
-    token = request.headers.get('Authorization') or request.headers.get('authorization')
-    contract_tenant_id = contract.get('tenant_id')
-    if contract_tenant_id:
-        contract_tenant_id = to_object_id(contract_tenant_id)
-        tenant = get_tenant_info(contract_tenant_id, token)
-        if tenant:
-            contract['tenant_info'] = {
-                'id': str(tenant.get('id', tenant.get('_id', ''))),
-                'name': tenant.get('name', ''),
-                'phone': tenant.get('phone', ''),
-                'id_card': tenant.get('id_card', ''),
-                'address': tenant.get('address', '')
-            }
-        else:
-            contract['tenant_info'] = {
-                'id': '',
-                'name': '',
-                'phone': '',
-                'id_card': '',
-                'address': ''
-            }
-    else:
-        contract['tenant_info'] = {
-            'id': '',
-            'name': '',
-            'phone': '',
-            'id_card': '',
-            'address': ''
-        }
+    if role != 'admin' and contract['user_id'] != user_id:
+        return jsonify({'message': 'Không có quyền xem hợp đồng này!'}), 403
     
-    # Convert ObjectId to string
-    if isinstance(contract.get('tenant_id'), ObjectId):
-        contract['tenant_id'] = str(contract['tenant_id'])
-    
-    return jsonify(contract), 200
+    return jsonify(format_contract(contract)), 200
 
-# API Tạo hợp đồng mới
+
 @app.route('/api/contracts', methods=['POST'])
 @token_required
 @admin_required
 def create_contract(current_user):
-    data = request.get_json()
-    # Get token from header (try both cases)
-    token = request.headers.get('Authorization') or request.headers.get('authorization')
+    """Create a new contract (admin only)"""
+    data = request.get_json() or {}
     
-    if not token:
-        return jsonify({'message': 'Token không tồn tại!'}), 401
+    required = ['user_id', 'room_id', 'start_date', 'end_date', 'monthly_rent', 'deposit_amount']
+    missing = [f for f in required if not data.get(f)]
+    if missing:
+        return jsonify({'message': f"Thiếu trường: {', '.join(missing)}"}), 400
+
+    # Enforce: one active contract per user
+    existing_active = contracts_collection.find_one({
+        'user_id': data['user_id'],
+        'status': 'active'
+    })
+    if existing_active:
+        return jsonify({'message': 'Người dùng đã có hợp đồng đang hoạt động, không thể tạo thêm!'}), 400
     
-    # Validation
-    required_fields = ['tenant_id', 'room_id', 'start_date', 'end_date', 'monthly_rent', 'deposit']
-    for field in required_fields:
-        if field not in data:
-            return jsonify({'message': f'Thiếu trường {field}!'}), 400
-    
-    # Kiểm tra tenant tồn tại
-    tenant_id = to_object_id(data['tenant_id'])
-    tenant = get_tenant_info(tenant_id, token)
-    if not tenant:
-        return jsonify({'message': 'Người thuê không tồn tại!'}), 404
-    
-    # Kiểm tra phòng có available không
-    room, error = check_room_availability(data['room_id'], token)
-    if error:
-        return jsonify({'message': error}), 400
-    
-    if room['status'] != 'available':
-        return jsonify({'message': 'Phòng không còn trống!'}), 400
-    
-    # Kiểm tra ngày hợp lệ
+    # Validate dates
     try:
-        start_date = datetime.datetime.fromisoformat(data['start_date'])
-        end_date = datetime.datetime.fromisoformat(data['end_date'])
-        
-        if end_date <= start_date:
+        start = datetime.datetime.fromisoformat(data['start_date'])
+        end = datetime.datetime.fromisoformat(data['end_date'])
+        if end <= start:
             return jsonify({'message': 'Ngày kết thúc phải sau ngày bắt đầu!'}), 400
     except:
-        return jsonify({'message': 'Định dạng ngày không hợp lệ!'}), 400
+        return jsonify({'message': 'Định dạng ngày không hợp lệ (YYYY-MM-DD)!'}), 400
     
-    # Tạo contract_id sử dụng UUID (thread-safe)
-    contract_id = f"C{uuid.uuid4().hex[:8].upper()}"
-    
-    # Đảm bảo contract_id không trùng (retry nếu cần)
-    while contracts_collection.find_one({'_id': contract_id}):
-        contract_id = f"C{uuid.uuid4().hex[:8].upper()}"
+    timestamp = get_timestamp()
+    contract_id = generate_contract_id()
     
     new_contract = {
         '_id': contract_id,
-        'tenant_id': tenant_id,  # Sử dụng tenant_id đã convert
         'room_id': data['room_id'],
+        'user_id': data['user_id'],
         'start_date': data['start_date'],
         'end_date': data['end_date'],
         'monthly_rent': float(data['monthly_rent']),
-        'deposit': float(data['deposit']),
-        'electric_price': float(data.get('electric_price', 3500)),
-        'water_price': float(data.get('water_price', 20000)),
-        'status': 'active',  # active | expired | terminated
-        'payment_day': int(data.get('payment_day', 5)),  # Ngày thanh toán hàng tháng
+        'deposit_amount': float(data['deposit_amount']),
+        'deposit_status': data.get('deposit_status', 'paid'),
+        'payment_day': int(data.get('payment_day', 5)),
+        'status': 'active',
         'notes': data.get('notes', ''),
-        'created_at': datetime.datetime.utcnow().isoformat(),
-        'updated_at': datetime.datetime.utcnow().isoformat()
+        'created_at': timestamp,
+        'updated_at': timestamp
     }
     
     try:
-        # Tạo hợp đồng
         contracts_collection.insert_one(new_contract)
-        
-        # Cập nhật trạng thái phòng
-        update_success = update_room_status(
-            data['room_id'], 
-            'occupied', 
-            tenant_id,  # Sử dụng tenant_id đã convert
-            token
-        )
-        
-        if not update_success:
-            # Rollback nếu cập nhật phòng thất bại
-            contracts_collection.delete_one({'_id': contract_id})
-            return jsonify({'message': 'Không thể cập nhật trạng thái phòng!'}), 500
-        
-        new_contract['id'] = new_contract['_id']
         return jsonify({
             'message': 'Tạo hợp đồng thành công!',
-            'contract': new_contract
+            'contract': format_contract(new_contract)
         }), 201
-        
+    except Exception as e:
+        return jsonify({'message': f'Lỗi: {str(e)}'}), 500
+
+
+@app.route('/api/contracts/from-reservation', methods=['POST'])
+@token_required
+@admin_required
+def create_contract_from_reservation(current_user):
+    """Create a contract by attaching the tenant who already paid room deposit (admin only)."""
+    data = request.get_json() or {}
+    room_id = data.get('room_id')
+    if not room_id:
+        return jsonify({'message': 'Thiếu room_id!'}), 400
+
+    # One active contract per user guard
+    tenant_user_id = data.get('user_id')
+    if tenant_user_id:
+        existing_active = contracts_collection.find_one({
+            'user_id': tenant_user_id,
+            'status': 'active'
+        })
+        if existing_active:
+            return jsonify({'message': 'Người dùng đã có hợp đồng đang hoạt động, không thể tạo thêm!'}), 400
+
+    # Required by contract model
+    start_date = data.get('start_date')
+    end_date = data.get('end_date')
+    monthly_rent = data.get('monthly_rent')
+
+    if not start_date or not end_date or monthly_rent is None:
+        return jsonify({'message': 'Thiếu start_date, end_date hoặc monthly_rent!'}), 400
+
+    # Validate dates
+    try:
+        start = datetime.datetime.fromisoformat(start_date)
+        end = datetime.datetime.fromisoformat(end_date)
+        if end <= start:
+            return jsonify({'message': 'Ngày kết thúc phải sau ngày bắt đầu!'}), 400
+    except Exception:
+        return jsonify({'message': 'Định dạng ngày không hợp lệ (YYYY-MM-DD)!'}), 400
+
+    room_service_url = get_service_url('room-service')
+    if not room_service_url:
+        return jsonify({'message': 'Không thể kết nối room-service!'}), 503
+
+    # Fetch room to get reserved tenant
+    auth_header = request.headers.get('Authorization') or request.headers.get('authorization')
+    try:
+        resp = requests.get(
+            f"{room_service_url}/api/rooms/{room_id}",
+            headers={'Authorization': auth_header} if auth_header else {},
+            timeout=8,
+        )
+    except Exception as e:
+        return jsonify({'message': f'Lỗi gọi room-service: {str(e)}'}), 503
+
+    if not resp.ok:
+        return jsonify({'message': 'Không tìm thấy phòng hoặc không thể lấy thông tin phòng!'}), 404
+
+    room = resp.json() or {}
+    if room.get('status') != 'reserved':
+        return jsonify({'message': 'Phòng không ở trạng thái giữ (reserved)!'}), 400
+
+    if (room.get('reservation_status') or '') != 'paid':
+        return jsonify({'message': 'Phòng chưa được xác nhận cọc (reservation_status != paid)!'}), 400
+
+    tenant_id = room.get('reserved_by_tenant_id')
+    if not tenant_id:
+        return jsonify({'message': 'Phòng chưa có người giữ (reserved_by_tenant_id)!'}), 400
+
+    # Prefer room deposit; allow override from request
+    deposit_amount = data.get('deposit_amount')
+    if deposit_amount is None:
+        deposit_amount = room.get('deposit', 0)
+
+    timestamp = get_timestamp()
+    contract_id = generate_contract_id()
+    new_contract = {
+        '_id': contract_id,
+        'room_id': room_id,
+        'user_id': str(tenant_id),
+        'start_date': start_date,
+        'end_date': end_date,
+        'monthly_rent': float(monthly_rent),
+        'deposit_amount': float(deposit_amount),
+        'deposit_status': 'paid',
+        'payment_day': int(data.get('payment_day', 5)),
+        'status': 'active',
+        'notes': data.get('notes', ''),
+        'created_at': timestamp,
+        'updated_at': timestamp,
+    }
+
+    try:
+        contracts_collection.insert_one(new_contract)
     except Exception as e:
         return jsonify({'message': f'Lỗi tạo hợp đồng: {str(e)}'}), 500
 
-# API Kết thúc hợp đồng
+    # Occupy the room via internal API key (service-to-service)
+    try:
+        occ = requests.put(
+            f"{room_service_url}/internal/rooms/{room_id}/occupy",
+            json={'tenant_id': str(tenant_id), 'contract_id': contract_id},
+            headers={'X-Internal-Api-Key': Config.INTERNAL_API_KEY},
+            timeout=8,
+        )
+        if not occ.ok:
+            # Rollback contract if room transition fails
+            contracts_collection.delete_one({'_id': contract_id})
+            return jsonify({'message': f"Không thể cập nhật trạng thái phòng: {occ.text}"}), 502
+    except Exception as e:
+        contracts_collection.delete_one({'_id': contract_id})
+        return jsonify({'message': f'Lỗi cập nhật phòng: {str(e)}'}), 502
+
+    return jsonify({'message': 'Tạo hợp đồng thành công!', 'contract': format_contract(new_contract)}), 201
+
+
+@app.route('/api/contracts/<contract_id>', methods=['PUT'])
+@token_required
+@admin_required
+def update_contract(current_user, contract_id):
+    """Update contract (admin only)"""
+    contract = contracts_collection.find_one({'_id': contract_id})
+    if not contract:
+        return jsonify({'message': 'Hợp đồng không tồn tại!'}), 404
+    
+    data = request.get_json() or {}
+    
+    allowed = ['monthly_rent', 'deposit_amount', 'deposit_status', 'payment_day', 'notes']
+    update_fields = {k: data[k] for k in allowed if k in data}
+    
+    if not update_fields:
+        return jsonify({'message': 'Không có dữ liệu cập nhật!'}), 400
+    
+    update_fields['updated_at'] = get_timestamp()
+    
+    contracts_collection.update_one({'_id': contract_id}, {'$set': update_fields})
+    updated = contracts_collection.find_one({'_id': contract_id})
+    
+    return jsonify({
+        'message': 'Cập nhật hợp đồng thành công!',
+        'contract': format_contract(updated)
+    }), 200
+
+
 @app.route('/api/contracts/<contract_id>/terminate', methods=['PUT'])
 @token_required
 @admin_required
 def terminate_contract(current_user, contract_id):
-    # Get token from header (try both cases)
-    token = request.headers.get('Authorization') or request.headers.get('authorization')
-    
-    if not token:
-        return jsonify({'message': 'Token không tồn tại!'}), 401
-    
+    """Terminate contract (admin only)"""
     contract = contracts_collection.find_one({'_id': contract_id})
     if not contract:
         return jsonify({'message': 'Hợp đồng không tồn tại!'}), 404
@@ -413,33 +321,36 @@ def terminate_contract(current_user, contract_id):
     if contract['status'] != 'active':
         return jsonify({'message': 'Hợp đồng đã kết thúc!'}), 400
     
-    try:
-        # Cập nhật trạng thái hợp đồng
-        contracts_collection.update_one(
-            {'_id': contract_id},
-            {
-                '$set': {
-                    'status': 'terminated',
-                    'end_date': datetime.datetime.utcnow().isoformat(),
-                    'updated_at': datetime.datetime.utcnow().isoformat()
-                }
-            }
-        )
-        
-        # Cập nhật trạng thái phòng về available
-        update_room_status(contract['room_id'], 'available', None, token)
-        
-        return jsonify({'message': 'Kết thúc hợp đồng thành công!'}), 200
-        
-    except Exception as e:
-        return jsonify({'message': f'Lỗi kết thúc hợp đồng: {str(e)}'}), 500
+    contracts_collection.update_one(
+        {'_id': contract_id},
+        {'$set': {
+            'status': 'terminated',
+            'updated_at': get_timestamp()
+        }}
+    )
 
-# API Gia hạn hợp đồng
+    # Vacate room so it becomes available again
+    room_service_url = get_service_url('room-service')
+    if room_service_url:
+        try:
+            requests.put(
+                f"{room_service_url}/internal/rooms/{contract['room_id']}/vacate",
+                json={'contract_id': contract_id},
+                headers={'X-Internal-Api-Key': Config.INTERNAL_API_KEY},
+                timeout=8,
+            )
+        except Exception:
+            pass
+
+    return jsonify({'message': 'Kết thúc hợp đồng thành công!'}), 200
+
+
 @app.route('/api/contracts/<contract_id>/extend', methods=['PUT'])
 @token_required
 @admin_required
 def extend_contract(current_user, contract_id):
-    data = request.get_json()
+    """Extend contract end date (admin only)"""
+    data = request.get_json() or {}
     
     if 'new_end_date' not in data:
         return jsonify({'message': 'Thiếu ngày kết thúc mới!'}), 400
@@ -449,58 +360,164 @@ def extend_contract(current_user, contract_id):
         return jsonify({'message': 'Hợp đồng không tồn tại!'}), 404
     
     if contract['status'] != 'active':
-        return jsonify({'message': 'Chỉ có thể gia hạn hợp đồng đang hoạt động!'}), 400
+        return jsonify({'message': 'Hợp đồng đã kết thúc!'}), 400
     
     try:
-        new_end_date = datetime.datetime.fromisoformat(data['new_end_date'])
-        old_end_date = datetime.datetime.fromisoformat(contract['end_date'])
-        
-        if new_end_date <= old_end_date:
-            return jsonify({'message': 'Ngày kết thúc mới phải sau ngày kết thúc hiện tại!'}), 400
-        
-        contracts_collection.update_one(
-            {'_id': contract_id},
-            {
-                '$set': {
-                    'end_date': data['new_end_date'],
-                    'updated_at': datetime.datetime.utcnow().isoformat()
-                }
-            }
-        )
-        
-        return jsonify({'message': 'Gia hạn hợp đồng thành công!'}), 200
-        
+        new_end = datetime.datetime.fromisoformat(data['new_end_date'])
+        old_end = datetime.datetime.fromisoformat(contract['end_date'])
+        if new_end <= old_end:
+            return jsonify({'message': 'Ngày mới phải sau ngày hiện tại!'}), 400
     except:
         return jsonify({'message': 'Định dạng ngày không hợp lệ!'}), 400
+    
+    contracts_collection.update_one(
+        {'_id': contract_id},
+        {'$set': {
+            'end_date': data['new_end_date'],
+            'updated_at': get_timestamp()
+        }}
+    )
+    
+    return jsonify({'message': 'Gia hạn hợp đồng thành công!'}), 200
 
-# API Lấy hợp đồng theo phòng
+
 @app.route('/api/contracts/room/<room_id>', methods=['GET'])
 @token_required
 def get_contracts_by_room(current_user, room_id):
+    """Get all contracts for a room"""
     contracts = list(contracts_collection.find({'room_id': room_id}).sort('created_at', -1))
+    return jsonify({
+        'contracts': [format_contract(c) for c in contracts],
+        'total': len(contracts)
+    }), 200
+
+
+@app.route('/api/contracts/user/<user_id>', methods=['GET'])
+@token_required
+def get_contracts_by_user(current_user, user_id):
+    """Get all contracts for a user"""
+    current_user_id = current_user.get('user_id') or current_user.get('_id')
+    role = current_user.get('role', '')
     
-    token = request.headers.get('Authorization') or request.headers.get('authorization')
-    for contract in contracts:
-        contract['id'] = contract['_id']
-        contract_tenant_id = contract.get('tenant_id')
-        if contract_tenant_id:
-            contract_tenant_id = to_object_id(contract_tenant_id)
-            tenant = get_tenant_info(contract_tenant_id, token)
-            if tenant:
-                contract['tenant_name'] = tenant.get('name', '')
-                contract['tenant_phone'] = tenant.get('phone', '')
-            else:
-                contract['tenant_name'] = ''
-                contract['tenant_phone'] = ''
-        else:
-            contract['tenant_name'] = ''
-            contract['tenant_phone'] = ''
+    # Only admin or the user themselves can view
+    if role != 'admin' and current_user_id != user_id:
+        return jsonify({'message': 'Không có quyền!'}), 403
     
-    return jsonify({'contracts': contracts, 'total': len(contracts)}), 200
+    contracts = list(contracts_collection.find({'user_id': user_id}).sort('created_at', -1))
+    return jsonify({
+        'contracts': [format_contract(c) for c in contracts],
+        'total': len(contracts)
+    }), 200
+
+
+# ============== Internal API (Service-to-Service) ==============
+
+from decorators import internal_api_required
+
+@app.route('/internal/contracts/auto-create', methods=['POST'])
+@internal_api_required
+def auto_create_contract():
+    """Auto-create contract from paid room reservation (called by payment-service)"""
+    data = request.get_json() or {}
+    room_id = data.get('room_id')
+    tenant_id = data.get('tenant_id')
+    payment_id = data.get('payment_id')
+    check_in_date = data.get('check_in_date')  # From booking
+
+    if not room_id or not tenant_id:
+        return jsonify({'message': 'Missing room_id or tenant_id'}), 400
+
+    # Check if contract already exists for this room or tenant (one active per tenant)
+    existing = contracts_collection.find_one({
+        'room_id': room_id,
+        'user_id': str(tenant_id),
+        'status': 'active'
+    })
+    if existing:
+        return jsonify({'message': 'Contract already exists', 'contract': format_contract(existing)}), 200
+
+    existing_for_tenant = contracts_collection.find_one({
+        'user_id': str(tenant_id),
+        'status': 'active'
+    })
+    if existing_for_tenant:
+        return jsonify({'message': 'Tenant already has an active contract'}), 400
+
+    # Get room info for price
+    room_service_url = get_service_url('room-service')
+    if not room_service_url:
+        return jsonify({'message': 'Cannot connect to room-service'}), 503
+
+    try:
+        resp = requests.get(
+            f"{room_service_url}/api/rooms/{room_id}",
+            headers={'X-Internal-Api-Key': Config.INTERNAL_API_KEY},
+            timeout=8,
+        )
+    except Exception as e:
+        return jsonify({'message': f'Error calling room-service: {str(e)}'}), 503
+
+    if not resp.ok:
+        return jsonify({'message': 'Room not found'}), 404
+
+    room = resp.json() or {}
+
+    # Calculate dates
+    if check_in_date:
+        try:
+            start = datetime.datetime.fromisoformat(check_in_date)
+        except:
+            start = datetime.datetime.utcnow()
+    else:
+        start = datetime.datetime.utcnow()
+    
+    # Contract for 12 months by default
+    end = start + datetime.timedelta(days=365)
+
+    timestamp = get_timestamp()
+    contract_id = generate_contract_id()
+    
+    new_contract = {
+        '_id': contract_id,
+        'room_id': room_id,
+        'user_id': str(tenant_id),
+        'start_date': start.strftime('%Y-%m-%d'),
+        'end_date': end.strftime('%Y-%m-%d'),
+        'monthly_rent': float(room.get('price', 0)),
+        'deposit_amount': float(room.get('deposit', 0)),
+        'deposit_status': 'paid',
+        'deposit_payment_id': payment_id,
+        'payment_day': 5,  # Default: 5th of each month
+        'status': 'active',
+        'notes': 'Hợp đồng tự động tạo sau thanh toán cọc thành công',
+        'created_at': timestamp,
+        'updated_at': timestamp,
+    }
+
+    try:
+        contracts_collection.insert_one(new_contract)
+    except Exception as e:
+        return jsonify({'message': f'Error creating contract: {str(e)}'}), 500
+
+    # Occupy the room
+    try:
+        occ = requests.put(
+            f"{room_service_url}/internal/rooms/{room_id}/occupy",
+            json={'tenant_id': str(tenant_id), 'contract_id': contract_id},
+            headers={'X-Internal-Api-Key': Config.INTERNAL_API_KEY},
+            timeout=8,
+        )
+        if not occ.ok:
+            print(f"Warning: Failed to occupy room: {occ.text}")
+    except Exception as e:
+        print(f"Warning: Error occupying room: {e}")
+
+    print(f"Auto-created contract {contract_id} for room {room_id}, tenant {tenant_id}")
+    return jsonify({'message': 'Contract created', 'contract': format_contract(new_contract)}), 201
+
 
 if __name__ == '__main__':
-    import os
+    print(f"\n{'='*50}\n  {Config.SERVICE_NAME.upper()}\n  Port: {Config.SERVICE_PORT}\n{'='*50}\n")
     register_service()
-    debug_mode = os.getenv('FLASK_DEBUG', 'false').lower() == 'true'
-    app.run(host='0.0.0.0', port=SERVICE_PORT, debug=debug_mode)
+    app.run(host='0.0.0.0', port=Config.SERVICE_PORT, debug=Config.DEBUG)
 

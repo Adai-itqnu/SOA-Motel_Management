@@ -21,11 +21,30 @@ COLLECTION_NAME = 'payments'
 # VNpay configuration (Sandbox for testing)
 # Register at: https://sandbox.vnpayment.vn/
 # Demo credentials for sandbox testing from VNPAY docs
-VNPAY_TMN_CODE = os.getenv('VNPAY_TMN_CODE', 'CGWSANDBOX')  # Official sandbox merchant code
-VNPAY_HASH_SECRET = os.getenv('VNPAY_HASH_SECRET', 'RAOEXHYVSDDIIENYWSLDIIZTANXUXZFJ')  # Official sandbox secret
-VNPAY_URL = os.getenv('VNPAY_URL', 'https://sandbox.vnpayment.vn/paymentv2/vpcpay.html')
-VNPAY_RETURN_URL = os.getenv('VNPAY_RETURN_URL', 'http://localhost:5000/payment-return')
+VNPAY_TMN_CODE = os.getenv('VNPAY_TMN_CODE', '729I87YR').strip()  # Official sandbox merchant code
+VNPAY_HASH_SECRET = os.getenv('VNPAY_HASH_SECRET', 'ZKPI2R2IFEA4VIA1WMCMI65XQUMQHTWT').strip()  # Official sandbox secret
+VNPAY_URL = os.getenv('VNPAY_URL', 'https://sandbox.vnpayment.vn/paymentv2/vpcpay.html').strip()
+# VNPay QueryDR/Refund API endpoint (used for server-to-server verification).
+# If not provided, derive from VNPAY_URL.
+_DEFAULT_VNPAY_API_URL = ''
+try:
+	if VNPAY_URL:
+		_DEFAULT_VNPAY_API_URL = VNPAY_URL.replace('/paymentv2/vpcpay.html', '/merchant_webapi/api/transaction')
+except Exception:
+	_DEFAULT_VNPAY_API_URL = ''
+
+VNPAY_API_URL = os.getenv('VNPAY_API_URL', _DEFAULT_VNPAY_API_URL).strip()
+VNPAY_RETURN_URL = os.getenv('VNPAY_RETURN_URL', 'http://localhost/api/payments/vnpay/return').strip()
+
+# Confirmation strategy:
+# - return: mark paid when browser returns with valid signature + amount match (project/demo-friendly)
+# - querydr: mark paid only when VNPay QueryDR verifies (server-to-server)
+# - ipn: mark paid only on IPN (requires public callback URL, e.g. ngrok)
+VNPAY_CONFIRM_MODE = os.getenv('VNPAY_CONFIRM_MODE', 'return').strip().lower()
+
+# Optional: explicitly provide IPN callback URL (useful with ngrok). If set, payment URL will include vnp_IpnUrl.
+VNPAY_IPN_URL = os.getenv('VNPAY_IPN_URL', '').strip()
 
 # Internal API key for service-to-service communication
-INTERNAL_API_KEY = os.getenv('INTERNAL_API_KEY', 'internal-api-key-change-me')
+INTERNAL_API_KEY = os.getenv('INTERNAL_API_KEY', 'internal-secret-key')
 

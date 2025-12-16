@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html class="light" lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      http-equiv="Cache-Control"
+      content="no-cache, no-store, must-revalidate"
+    />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
+    <title>Thông tin cá nhân - MotelHDK</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800;900&display=swap"
+      rel="stylesheet"
+    />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap"
+    />
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <script>
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              primary: "#ea2a33",
+              "primary-hover": "#d41f27",
+              "bg-soft": "#f8f6f6",
+              surface: "#ffffff",
+            },
+            fontFamily: {
+              display: ["Be Vietnam Pro", "sans-serif"],
+              body: ["Be Vietnam Pro", "sans-serif"],
+            },
+            boxShadow: {
+              card: "0 15px 50px rgba(16,24,40,0.08)",
+              glow: "0 20px 45px rgba(234,42,51,0.22)",
+            },
+          },
+        },
+      };
+    </script>
+    <style>
+      ::-webkit-scrollbar {
+        width: 8px;
+      }
+      ::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: #cbd5e1;
+        border-radius: 4px;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: #94a3b8;
+      }
+      .dropdown-menu {
+        opacity: 0;
+        visibility: hidden;
+        transform: translateY(-6px);
+        transition: all 0.18s ease;
+      }
+      .dropdown-menu.show {
+        opacity: 1;
+        visibility: visible;
+        transform: translateY(0);
+      }
+    </style>
+  </head>
+  <body
+    class="bg-bg-soft text-gray-900 font-display min-h-screen flex flex-col"
+  >
+    <!-- Header placeholder - will be replaced by layout.js -->
+    <div id="layout-header"></div>
+
+    <!-- Main Content -->
+    <main
+      class="flex-1 max-w-[1280px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-8"
+    >
+      <!-- Breadcrumb -->
+      <div class="flex items-center gap-2 text-sm text-gray-500 mb-2">
+        <a href="/user/home.html" class="hover:text-primary transition-colors"
+          >Trang chủ</a
+        >
+        <span class="material-symbols-outlined text-[16px]">chevron_right</span>
+        <span class="text-primary font-medium">Thông tin cá nhân</span>
+      </div>
+
+      <!-- Page Header -->
+      <div class="flex flex-wrap justify-between items-end gap-4 mb-8">
+        <div class="flex flex-col gap-2">
+          <h1
+            class="text-gray-900 text-3xl md:text-4xl font-black leading-tight tracking-tight"
+          >
+            Thông tin cá nhân
+          </h1>
+          <p class="text-gray-500 text-base">
+            Quản lý thông tin tài khoản của bạn
+          </p>
+        </div>
+      </div>
+
+      <!-- Profile Card -->
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <!-- Left: Avatar Card -->
+        <div class="lg:col-span-1">
+          <div
+            class="bg-white rounded-2xl shadow-card overflow-hidden sticky top-24"
+          >
+            <!-- Avatar Header with gradient -->
+            <div
+              class="bg-gradient-to-br from-primary to-red-600 p-8 text-center"
+            >
+              <div
+                id="avatarLarge"
+                class="w-24 h-24 mx-auto bg-white rounded-full flex items-center justify-center text-3xl font-bold text-primary shadow-lg"
+              >
+                U
+              </div>
+              <h2 class="mt-4 text-xl font-bold text-white" id="displayName">
+                Người dùng
+              </h2>
+              <p class="text-white/80 text-sm" id="displayEmail">
+                email@example.com
+              </p>
+            </div>
+            <!-- Account Info -->
+            <div class="p-6 space-y-4">
+              <div
+                class="flex items-center gap-3 text-sm text-gray-600 bg-gray-50 rounded-xl px-4 py-3"
+              >
+                <span class="material-symbols-outlined text-primary"
+                  >verified_user</span
+                >
+                <div>
+                  <p class="text-xs text-gray-500">Vai trò</p>
+                  <p class="font-semibold text-gray-900">Người thuê</p>
+                </div>
+              </div>
+              <div
+                class="flex items-center gap-3 text-sm text-gray-600 bg-gray-50 rounded-xl px-4 py-3"
+              >
+                <span class="material-symbols-outlined text-primary"
+                  >calendar_today</span
+                >
+                <div>
+                  <p class="text-xs text-gray-500">Ngày tham gia</p>
+                  <p id="joinDate" class="font-semibold text-gray-900">--</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right: Profile Form -->
+        <div class="lg:col-span-2">
+          <div class="bg-white rounded-2xl shadow-card p-6 md:p-8">
+            <div class="flex items-center gap-3 mb-6">
+              <div
+                class="size-10 bg-primary/10 rounded-xl flex items-center justify-center"
+              >
+                <span class="material-symbols-outlined text-primary"
+                  >edit_note</span
+                >
+              </div>
+              <div>
+                <h3 class="text-lg font-bold text-gray-900">
+                  Chỉnh sửa thông tin
+                </h3>
+                <p class="text-sm text-gray-500">
+                  Cập nhật thông tin cá nhân của bạn
+                </p>
+              </div>
+            </div>
+
+            <form id="profileForm" class="space-y-5">
+              <!-- Username (readonly) -->
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1.5"
+                  >Tên đăng nhập</label
+                >
+                <div class="relative">
+                  <span
+                    class="absolute left-4 top-1/2 -translate-y-1/2 material-symbols-outlined text-gray-400 text-[20px]"
+                    >person</span
+                  >
+                  <input
+                    type="text"
+                    id="username"
+                    readonly
+                    class="w-full pl-12 pr-4 py-3 bg-gray-100 border border-gray-200 rounded-xl text-gray-500 cursor-not-allowed"
+                  />
+                </div>
+              </div>
+
+              <!-- Fullname -->
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1.5"
+                  >Họ và tên <span class="text-primary">*</span></label
+                >
+                <div class="relative">
+                  <span
+                    class="absolute left-4 top-1/2 -translate-y-1/2 material-symbols-outlined text-gray-400 text-[20px]"
+                    >badge</span
+                  >
+                  <input
+                    type="text"
+                    id="fullname"
+                    required
+                    class="w-full pl-12 pr-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary transition"
+                    placeholder="Nhập họ và tên"
+                  />
+                </div>
+              </div>
+
+              <!-- Email (readonly) -->
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1.5"
+                  >Email</label
+                >
+                <div class="relative">
+                  <span
+                    class="absolute left-4 top-1/2 -translate-y-1/2 material-symbols-outlined text-gray-400 text-[20px]"
+                    >mail</span
+                  >
+                  <input
+                    type="email"
+                    id="email"
+                    readonly
+                    class="w-full pl-12 pr-4 py-3 bg-gray-100 border border-gray-200 rounded-xl text-gray-500 cursor-not-allowed"
+                  />
+                </div>
+              </div>
+
+              <!-- Phone -->
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1.5"
+                  >Số điện thoại</label
+                >
+                <div class="relative">
+                  <span
+                    class="absolute left-4 top-1/2 -translate-y-1/2 material-symbols-outlined text-gray-400 text-[20px]"
+                    >phone</span
+                  >
+                  <input
+                    type="tel"
+                    id="phone"
+                    class="w-full pl-12 pr-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary transition"
+                    placeholder="Nhập số điện thoại"
+                  />
+                </div>
+              </div>
+
+              <!-- ID Card -->
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1.5"
+                  >CCCD/CMND <span class="text-primary">*</span></label
+                >
+                <div class="relative">
+                  <span
+                    class="absolute left-4 top-1/2 -translate-y-1/2 material-symbols-outlined text-gray-400 text-[20px]"
+                    >id_card</span
+                  >
+                  <input
+                    type="text"
+                    id="id_card"
+                    class="w-full pl-12 pr-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary transition"
+                    placeholder="Nhập số CCCD/CMND"
+                  />
+                </div>
+                <p class="text-xs text-gray-500 mt-1.5 flex items-center gap-1">
+                  <span class="material-symbols-outlined text-[14px]"
+                    >info</span
+                  >
+                  Bắt buộc khi đặt phòng
+                </p>
+              </div>
+
+              <!-- Address -->
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1.5"
+                  >Địa chỉ thường trú</label
+                >
+                <div class="relative">
+                  <span
+                    class="absolute left-4 top-4 material-symbols-outlined text-gray-400 text-[20px]"
+                    >location_on</span
+                  >
+                  <textarea
+                    id="address"
+                    rows="2"
+                    class="w-full pl-12 pr-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary transition resize-none"
+                    placeholder="Nhập địa chỉ thường trú"
+                  ></textarea>
+                </div>
+              </div>
+
+              <!-- Messages -->
+              <div
+                id="errorMsg"
+                class="hidden bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-xl text-sm items-center gap-2"
+              >
+                <span class="material-symbols-outlined text-[18px]">error</span>
+                <span id="errorText"></span>
+              </div>
+              <div
+                id="successMsg"
+                class="hidden bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-xl text-sm items-center gap-2"
+              >
+                <span class="material-symbols-outlined text-[18px]"
+                  >check_circle</span
+                >
+                <span id="successText"></span>
+              </div>
+
+              <!-- Buttons -->
+              <div class="flex gap-4 pt-4">
+                <a
+                  href="/user/home.html"
+                  class="flex-1 py-3.5 border border-gray-300 rounded-xl font-semibold text-gray-700 text-center hover:bg-gray-50 transition flex items-center justify-center gap-2"
+                >
+                  <span class="material-symbols-outlined text-[20px]"
+                    >arrow_back</span
+                  >
+                  Quay lại
+                </a>
+                <button
+                  type="submit"
+                  id="saveBtn"
+                  class="flex-1 py-3.5 bg-primary hover:bg-primary-hover text-white rounded-xl font-semibold transition-all shadow-lg shadow-primary/20 flex items-center justify-center gap-2"
+                >
+                  <span class="material-symbols-outlined text-[20px]"
+                    >save</span
+                  >
+                  <span id="saveBtnText">Lưu thay đổi</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <!-- Footer placeholder - will be replaced by layout.js -->
+    <div id="layout-footer"></div>
+
+    <script src="/assets/js/common.js"></script>
+    <script src="/assets/js/user/layout.js"></script>
+    <script>
+      document.addEventListener("DOMContentLoaded", () => {
+        if (!Auth.isLoggedIn()) {
+          window.location.href = "/auth/login.html";
+          return;
+        }
+
+        // Initialize layout
+        if (typeof Layout !== "undefined") {
+          Layout.init("profile");
+          Layout.setPageTitle("Thông tin cá nhân");
+        }
+
+        loadProfile();
+        document
+          .getElementById("profileForm")
+          .addEventListener("submit", handleSave);
+      });
+
+      async function loadProfile() {
+        try {
+          const res = await API.get("/users/me");
+
+          if (res.ok) {
+            const user = res.data;
+            const displayName = user.fullname || user.username || "User";
+
+            // Update header
+            document.getElementById("avatarLarge").textContent = displayName
+              .charAt(0)
+              .toUpperCase();
+            document.getElementById("displayName").textContent = displayName;
+            document.getElementById("displayEmail").textContent =
+              user.email || "";
+
+            // Update join date
+            if (user.created_at) {
+              const date = new Date(user.created_at);
+              document.getElementById("joinDate").textContent =
+                date.toLocaleDateString("vi-VN");
+            }
+
+            // Fill form
+            document.getElementById("username").value = user.username || "";
+            document.getElementById("fullname").value = user.fullname || "";
+            document.getElementById("email").value = user.email || "";
+            document.getElementById("phone").value = user.phone || "";
+            document.getElementById("id_card").value = user.id_card || "";
+            document.getElementById("address").value = user.address || "";
+          } else {
+            showError(
+              "Không thể tải thông tin: " +
+                (res.data.message || "Lỗi không xác định")
+            );
+          }
+        } catch (error) {
+          console.error("Load profile error:", error);
+          showError("Lỗi kết nối server");
+        }
+      }
+
+      async function handleSave(e) {
+        e.preventDefault();
+        hideMessages();
+
+        const saveBtn = document.getElementById("saveBtn");
+        const btnText = document.getElementById("saveBtnText");
+        saveBtn.disabled = true;
+        btnText.textContent = "Đang lưu...";
+
+        const data = {
+          fullname: document.getElementById("fullname").value.trim(),
+          phone: document.getElementById("phone").value.trim(),
+          id_card: document.getElementById("id_card").value.trim(),
+          address: document.getElementById("address").value.trim(),
+        };
+
+        if (!data.fullname) {
+          showError("Họ và tên không được để trống");
+          saveBtn.disabled = false;
+          btnText.textContent = "Lưu thay đổi";
+          return;
+        }
+
+        try {
+          const res = await API.put("/users/me", data);
+
+          if (res.ok) {
+            // Update localStorage user
+            const currentUser = Auth.getUser();
+            Auth.setUser({ ...currentUser, ...data });
+
+            showSuccess("Cập nhật thông tin thành công!");
+
+            // Update display
+            document.getElementById("avatarLarge").textContent = data.fullname
+              .charAt(0)
+              .toUpperCase();
+            document.getElementById("displayName").textContent = data.fullname;
+
+            // Update layout header if available
+            if (typeof Layout !== "undefined") {
+              Layout.loadUserInfo();
+            }
+          } else {
+            showError(res.data.message || "Không thể cập nhật thông tin");
+          }
+        } catch (error) {
+          console.error("Save profile error:", error);
+          showError("Lỗi kết nối server");
+        } finally {
+          saveBtn.disabled = false;
+          btnText.textContent = "Lưu thay đổi";
+        }
+      }
+
+      function showError(msg) {
+        const el = document.getElementById("errorMsg");
+        document.getElementById("errorText").textContent = msg;
+        el.classList.remove("hidden");
+        el.classList.add("flex");
+      }
+
+      function showSuccess(msg) {
+        const el = document.getElementById("successMsg");
+        document.getElementById("successText").textContent = msg;
+        el.classList.remove("hidden");
+        el.classList.add("flex");
+      }
+
+      function hideMessages() {
+        document.getElementById("errorMsg").classList.add("hidden");
+        document.getElementById("errorMsg").classList.remove("flex");
+        document.getElementById("successMsg").classList.add("hidden");
+        document.getElementById("successMsg").classList.remove("flex");
+      }
+    </script>
+  </body>
+</html>

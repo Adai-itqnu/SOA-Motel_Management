@@ -1,144 +1,64 @@
+"""Report Service - Main Application"""
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import datetime
-import jwt
-from functools import wraps
-import requests
-from config import JWT_SECRET, SERVICE_NAME, SERVICE_PORT, CONSUL_HOST, CONSUL_PORT
+import atexit
+
+from config import Config
 from model import bills_collection
-from service_registry import register_service
+from decorators import token_required, admin_required
+from services import (
+    get_room_stats, get_contracts, get_contract_detail,
+    get_room_contracts, get_room_detail
+)
+from utils import (
+    get_timestamp, format_bill, calculate_bill_amounts,
+    get_bill_stats, get_total_revenue, get_total_debt,
+    get_revenue_by_month, get_deposits_by_month
+)
+from service_registry import register_service, deregister_service
+
 
 app = Flask(__name__)
+app.config.from_object(Config)
 CORS(app)
+atexit.register(deregister_service)
 
-# Load configuration
-app.config['SECRET_KEY'] = JWT_SECRET
-app.config['SERVICE_NAME'] = SERVICE_NAME
-app.config['SERVICE_PORT'] = SERVICE_PORT
 
-# Decorator xác thực token
-def token_required(f):
-    @wraps(f)
-    def decorated(*args, **kwargs):
-        # Try both 'Authorization' and 'authorization' (nginx may lowercase headers)
-        token = request.headers.get('Authorization') or request.headers.get('authorization')
-        
-        if not token:
-            return jsonify({'message': 'Token không tồn tại!'}), 401
-        
-        try:
-            if token.startswith('Bearer '):
-                token = token[7:]
-            elif token.startswith('bearer '):
-                token = token[7:]
-            
-            data = jwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'])
-            current_user = data
-            
-        except jwt.ExpiredSignatureError:
-            return jsonify({'message': 'Token đã hết hạn!'}), 401
-        except jwt.InvalidTokenError:
-            return jsonify({'message': 'Token không hợp lệ!'}), 401
-        
-        return f(current_user, *args, **kwargs)
-    
-    return decorated
+# ============== Health Check ==============
 
-# Decorator kiểm tra quyền admin
-def admin_required(f):
-    @wraps(f)
-    def decorated(current_user, *args, **kwargs):
-        if current_user.get('role') != 'admin':
-            return jsonify({'message': 'Yêu cầu quyền admin!'}), 403
-        return f(current_user, *args, **kwargs)
-    return decorated
-
-# Helper function: Get service URL from Consul
-def get_service_url(service_name):
-    try:
-        consul_url = f"http://{CONSUL_HOST}:{CONSUL_PORT}/v1/catalog/service/{service_name}"
-        response = requests.get(consul_url, timeout=5)
-        if response.ok and response.json():
-            service = response.json()[0]
-            return f"http://{service['ServiceAddress']}:{service['ServicePort']}"
-        return None
-    except Exception as e:
-        print(f"Error getting service URL: {e}")
-        return None
-
-# Helper function: Get data from other services
-def fetch_service_data(service_name, endpoint, token):
-    try:
-        service_url = get_service_url(service_name)
-        if not service_url:
-            return None
-        
-        # Ensure token has correct Bearer prefix
-        if token and (token.startswith('Bearer ') or token.startswith('bearer ')):
-            auth_header = token
-        else:
-            auth_header = f'Bearer {token}'
-        
-        response = requests.get(
-            f"{service_url}{endpoint}",
-            headers={'Authorization': auth_header},
-            timeout=10
-        )
-        
-        if response.ok:
-            return response.json()
-        return None
-    except Exception as e:
-        print(f"Error fetching from {service_name}: {e}")
-        return None
-
-# Health check endpoint
 @app.route('/health', methods=['GET'])
-def health_check():
-    return jsonify({'status': 'healthy', 'service': app.config['SERVICE_NAME']}), 200
+def health():
+    return jsonify({'status': 'healthy', 'service': Config.SERVICE_NAME}), 200
 
-# ============== BILL APIs ==============
 
-# API Tạo hóa đơn
+# ============== Bill APIs ==============
+
 @app.route('/api/bills', methods=['POST'])
 @token_required
 @admin_required
 def create_bill(current_user):
-    data = request.get_json()
+    """Create a new bill"""
+    data = request.get_json() or {}
     
-    # Validation
-    required_fields = ['contract_id', 'room_id', 'month', 'year', 'electric_old', 'electric_new', 'water_old', 'water_new']
-    for field in required_fields:
-        if field not in data:
-            return jsonify({'message': f'Thiếu trường {field}!'}), 400
+    required = ['contract_id', 'room_id', 'month', 'year', 'electric_old', 'electric_new', 'water_old', 'water_new']
+    missing = [f for f in required if f not in data]
+    if missing:
+        return jsonify({'message': f"Thiếu trường: {', '.join(missing)}"}), 400
     
-    # Kiểm tra bill đã tồn tại chưa
-    existing_bill = bills_collection.find_one({
+    # Check duplicate
+    if bills_collection.find_one({
         'contract_id': data['contract_id'],
         'month': data['month'],
         'year': data['year']
-    })
-    
-    if existing_bill:
+    }):
         return jsonify({'message': 'Hóa đơn tháng này đã tồn tại!'}), 400
     
-    # Tính toán
-    electric_used = data['electric_new'] - data['electric_old']
-    water_used = data['water_new'] - data['water_old']
-    
-    electric_cost = electric_used * float(data.get('electric_price', 3500))
-    water_cost = water_used * float(data.get('water_price', 20000))
-    room_rent = float(data.get('room_rent', 0))
-    other_fees = float(data.get('other_fees', 0))
-    
-    total_amount = room_rent + electric_cost + water_cost + other_fees
-    
-    # Tạo bill_id
+    amounts = calculate_bill_amounts(data)
     bill_count = bills_collection.count_documents({})
-    bill_id = f"B{bill_count + 1:05d}"
     
     new_bill = {
-        '_id': bill_id,
+        '_id': f"B{bill_count + 1:05d}",
         'contract_id': data['contract_id'],
         'room_id': data['room_id'],
         'tenant_id': data.get('tenant_id', ''),
@@ -146,347 +66,246 @@ def create_bill(current_user):
         'year': data['year'],
         'electric_old': data['electric_old'],
         'electric_new': data['electric_new'],
-        'electric_used': electric_used,
+        'electric_used': amounts['electric_used'],
         'electric_price': float(data.get('electric_price', 3500)),
-        'electric_cost': electric_cost,
+        'electric_cost': amounts['electric_cost'],
         'water_old': data['water_old'],
         'water_new': data['water_new'],
-        'water_used': water_used,
+        'water_used': amounts['water_used'],
         'water_price': float(data.get('water_price', 20000)),
-        'water_cost': water_cost,
-        'room_rent': room_rent,
-        'other_fees': other_fees,
-        'total_amount': total_amount,
+        'water_cost': amounts['water_cost'],
+        'room_rent': amounts['room_rent'],
+        'other_fees': amounts['other_fees'],
+        'total_amount': amounts['total_amount'],
         'paid_amount': 0,
-        'debt_amount': total_amount,
-        'status': 'unpaid',  # unpaid | partial | paid
+        'debt_amount': amounts['total_amount'],
+        'status': 'unpaid',
         'due_date': data.get('due_date', ''),
         'notes': data.get('notes', ''),
-        'created_at': datetime.datetime.utcnow().isoformat(),
-        'updated_at': datetime.datetime.utcnow().isoformat()
+        'created_at': get_timestamp(),
+        'updated_at': get_timestamp()
     }
     
     try:
         bills_collection.insert_one(new_bill)
-        new_bill['id'] = new_bill['_id']
         return jsonify({
             'message': 'Tạo hóa đơn thành công!',
-            'bill': new_bill
+            'bill': format_bill(new_bill)
         }), 201
     except Exception as e:
-        return jsonify({'message': f'Lỗi tạo hóa đơn: {str(e)}'}), 500
+        return jsonify({'message': f'Lỗi: {str(e)}'}), 500
 
-# API Thanh toán hóa đơn
+
 @app.route('/api/bills/<bill_id>/pay', methods=['PUT'])
 @token_required
 @admin_required
 def pay_bill(current_user, bill_id):
-    data = request.get_json()
+    """Process bill payment"""
+    data = request.get_json() or {}
     
     if 'amount' not in data:
-        return jsonify({'message': 'Thiếu số tiền thanh toán!'}), 400
+        return jsonify({'message': 'Thiếu số tiền!'}), 400
     
     bill = bills_collection.find_one({'_id': bill_id})
     if not bill:
         return jsonify({'message': 'Hóa đơn không tồn tại!'}), 404
     
     amount = float(data['amount'])
-    new_paid_amount = bill['paid_amount'] + amount
-    new_debt_amount = bill['total_amount'] - new_paid_amount
+    new_paid = bill['paid_amount'] + amount
+    new_debt = max(0, bill['total_amount'] - new_paid)
     
-    # Xác định trạng thái
-    if new_debt_amount <= 0:
-        status = 'paid'
-        new_debt_amount = 0
-    elif new_paid_amount > 0:
-        status = 'partial'
-    else:
-        status = 'unpaid'
+    status = 'paid' if new_debt <= 0 else ('partial' if new_paid > 0 else 'unpaid')
     
     try:
-        bills_collection.update_one(
-            {'_id': bill_id},
-            {
-                '$set': {
-                    'paid_amount': new_paid_amount,
-                    'debt_amount': new_debt_amount,
-                    'status': status,
-                    'payment_date': datetime.datetime.utcnow().isoformat() if status == 'paid' else bill.get('payment_date', ''),
-                    'updated_at': datetime.datetime.utcnow().isoformat()
-                }
-            }
-        )
-        
+        bills_collection.update_one({'_id': bill_id}, {'$set': {
+            'paid_amount': new_paid,
+            'debt_amount': new_debt,
+            'status': status,
+            'payment_date': get_timestamp() if status == 'paid' else bill.get('payment_date', ''),
+            'updated_at': get_timestamp()
+        }})
         return jsonify({
             'message': 'Thanh toán thành công!',
-            'paid_amount': new_paid_amount,
-            'debt_amount': new_debt_amount,
+            'paid_amount': new_paid,
+            'debt_amount': new_debt,
             'status': status
         }), 200
     except Exception as e:
-        return jsonify({'message': f'Lỗi thanh toán: {str(e)}'}), 500
+        return jsonify({'message': f'Lỗi: {str(e)}'}), 500
 
-# API Lấy danh sách hóa đơn
+
 @app.route('/api/bills', methods=['GET'])
 @token_required
 @admin_required
 def get_bills(current_user):
-    status = request.args.get('status', '')
-    month = request.args.get('month', '')
-    year = request.args.get('year', '')
-    room_id = request.args.get('room_id', '')
-    
+    """Get list of bills"""
     query = {}
-    if status:
-        query['status'] = status
-    if month:
-        query['month'] = int(month)
-    if year:
-        query['year'] = int(year)
-    if room_id:
-        query['room_id'] = room_id
+    for param in ['status', 'room_id']:
+        if request.args.get(param):
+            query[param] = request.args.get(param)
+    for param in ['month', 'year']:
+        if request.args.get(param):
+            query[param] = int(request.args.get(param))
     
     bills = list(bills_collection.find(query).sort('created_at', -1))
-    
-    for bill in bills:
-        bill['id'] = bill['_id']
+    for b in bills:
+        format_bill(b)
     
     return jsonify({'bills': bills, 'total': len(bills)}), 200
 
-# ============== REPORT APIs ==============
 
-# API Báo cáo tổng quan
+# ============== Report APIs ==============
+
 @app.route('/api/reports/overview', methods=['GET'])
 @token_required
 @admin_required
-def get_overview_report(current_user):
+def get_overview(current_user):
+    """Get overview report"""
     token = request.headers.get('Authorization')
     
-    # Lấy dữ liệu từ các service khác
-    rooms_data = fetch_service_data('room-service', '/api/rooms/stats', token)
-    contracts_data = fetch_service_data('contract-service', '/api/contracts?status=active', token)
+    rooms = get_room_stats(token) or {'total': 0, 'available': 0, 'occupied': 0, 'occupancy_rate': 0}
+    active_contracts = get_contracts(token, 'active')
+    all_contracts = get_contracts(token)
     
-    # Thống kê hóa đơn
-    total_bills = bills_collection.count_documents({})
-    paid_bills = bills_collection.count_documents({'status': 'paid'})
-    unpaid_bills = bills_collection.count_documents({'status': 'unpaid'})
-    partial_bills = bills_collection.count_documents({'status': 'partial'})
+    bill_stats = get_bill_stats()
+    revenue_bills = get_total_revenue()
     
-    # Tính tổng doanh thu từ bills (thanh toán hàng tháng)
-    pipeline_revenue = [
-        {'$match': {'status': 'paid'}},
-        {'$group': {'_id': None, 'total': {'$sum': '$total_amount'}}}
-    ]
-    revenue_result = list(bills_collection.aggregate(pipeline_revenue))
-    revenue_from_bills = revenue_result[0]['total'] if revenue_result else 0
+    # Calculate deposit revenue
+    deposit_revenue = 0
+    if all_contracts and all_contracts.get('contracts'):
+        deposit_revenue = sum(float(c.get('deposit', 0)) for c in all_contracts['contracts'])
     
-    # Tính tổng tiền cọc từ contracts (deposit) - lấy tất cả contracts
-    all_contracts_data = fetch_service_data('contract-service', '/api/contracts', token)
-    revenue_from_deposits = 0
-    if all_contracts_data and all_contracts_data.get('contracts'):
-        for contract in all_contracts_data['contracts']:
-            # Tính deposit từ tất cả contracts (kể cả đã kết thúc)
-            revenue_from_deposits += float(contract.get('deposit', 0))
+    total_revenue = revenue_bills + deposit_revenue
+    total_debt = get_total_debt()
     
-    # Tổng doanh thu = tiền cọc + thanh toán từ bills
-    total_revenue = revenue_from_bills + revenue_from_deposits
-    
-    # Tính tổng nợ
-    pipeline_debt = [
-        {'$match': {'status': {'$in': ['unpaid', 'partial']}}},
-        {'$group': {'_id': None, 'total': {'$sum': '$debt_amount'}}}
-    ]
-    debt_result = list(bills_collection.aggregate(pipeline_debt))
-    total_debt = debt_result[0]['total'] if debt_result else 0
-    
-    overview = {
-        'rooms': rooms_data if rooms_data else {
-            'total': 0,
-            'available': 0,
-            'occupied': 0,
-            'occupancy_rate': 0
-        },
-        'contracts': {
-            'active': contracts_data['total'] if contracts_data else 0
-        },
-        'bills': {
-            'total': total_bills,
-            'paid': paid_bills,
-            'unpaid': unpaid_bills,
-            'partial': partial_bills
-        },
+    return jsonify({
+        'rooms': rooms,
+        'contracts': {'active': active_contracts['total'] if active_contracts else 0},
+        'bills': bill_stats,
         'finance': {
             'total_revenue': total_revenue,
             'total_debt': total_debt,
             'collection_rate': round((total_revenue / (total_revenue + total_debt) * 100) if (total_revenue + total_debt) > 0 else 0, 2)
         }
-    }
-    
-    return jsonify(overview), 200
+    }), 200
 
-# API Báo cáo doanh thu theo tháng
+
 @app.route('/api/reports/revenue', methods=['GET'])
 @token_required
 @admin_required
-def get_revenue_report(current_user):
+def get_revenue(current_user):
+    """Get monthly revenue report"""
     year = request.args.get('year', datetime.datetime.now().year)
     token = request.headers.get('Authorization')
     
-    # Tính doanh thu từ bills (thanh toán hàng tháng)
-    pipeline = [
-        {'$match': {'year': int(year), 'status': 'paid'}},
-        {'$group': {
-            '_id': '$month',
-            'revenue': {'$sum': '$total_amount'},
-            'bills_count': {'$sum': 1}
-        }},
-        {'$sort': {'_id': 1}}
-    ]
+    bills_by_month = get_revenue_by_month(year)
+    contracts_data = get_contracts(token)
+    deposits = get_deposits_by_month(contracts_data.get('contracts', []) if contracts_data else [], year)
     
-    result = list(bills_collection.aggregate(pipeline))
-    
-    # Tính tiền cọc từ contracts được tạo trong năm đó
-    contracts_data = fetch_service_data('contract-service', '/api/contracts', token)
-    deposits_by_month = {}
-    if contracts_data and contracts_data.get('contracts'):
-        for contract in contracts_data['contracts']:
-            try:
-                created_date = datetime.datetime.fromisoformat(contract.get('created_at', ''))
-                if created_date.year == int(year):
-                    month = created_date.month
-                    deposit = float(contract.get('deposit', 0))
-                    if month not in deposits_by_month:
-                        deposits_by_month[month] = 0
-                    deposits_by_month[month] += deposit
-            except:
-                pass
-    
-    # Tạo data cho 12 tháng (bills + deposits)
-    revenue_by_month = []
+    monthly_data = []
     for month in range(1, 13):
-        month_data = next((item for item in result if item['_id'] == month), None)
-        bills_revenue = month_data['revenue'] if month_data else 0
-        deposits_revenue = deposits_by_month.get(month, 0)
-        total_month_revenue = bills_revenue + deposits_revenue
+        month_bills = next((m for m in bills_by_month if m['_id'] == month), None)
+        bills_rev = month_bills['revenue'] if month_bills else 0
+        deps_rev = deposits.get(month, 0)
         
-        revenue_by_month.append({
+        monthly_data.append({
             'month': month,
-            'revenue': total_month_revenue,
-            'bills_revenue': bills_revenue,
-            'deposits_revenue': deposits_revenue,
-            'bills_count': month_data['bills_count'] if month_data else 0
+            'revenue': bills_rev + deps_rev,
+            'bills_revenue': bills_rev,
+            'deposits_revenue': deps_rev,
+            'bills_count': month_bills['bills_count'] if month_bills else 0
         })
-    
-    total_revenue = sum(item['revenue'] for item in revenue_by_month)
     
     return jsonify({
         'year': int(year),
-        'total_revenue': total_revenue,
-        'monthly_data': revenue_by_month
+        'total_revenue': sum(m['revenue'] for m in monthly_data),
+        'monthly_data': monthly_data
     }), 200
 
-# API Báo cáo nợ tiền
+
 @app.route('/api/reports/debt', methods=['GET'])
 @token_required
 @admin_required
-def get_debt_report(current_user):
+def get_debt(current_user):
+    """Get debt report"""
     token = request.headers.get('Authorization')
     
-    # Lấy tất cả hóa đơn chưa thanh toán hoặc thanh toán một phần
     debt_bills = list(bills_collection.find({
         'status': {'$in': ['unpaid', 'partial']}
     }).sort('due_date', 1))
     
+    now = datetime.datetime.now()
+    overdue_count = 0
+    
     for bill in debt_bills:
-        bill['id'] = bill['_id']
+        format_bill(bill)
         
-        # Lấy thông tin tenant từ Tenant Service
+        # Get tenant info from contract
         if bill.get('contract_id'):
-            contract_data = fetch_service_data(
-                'contract-service', 
-                f"/api/contracts/{bill['contract_id']}", 
-                token
-            )
-            if contract_data:
-                bill['tenant_name'] = contract_data.get('tenant_info', {}).get('name', '')
-                bill['tenant_phone'] = contract_data.get('tenant_info', {}).get('phone', '')
-    
-    # Tính tổng nợ
-    total_debt = sum(bill['debt_amount'] for bill in debt_bills)
-    
-    # Phân loại nợ theo mức độ
-    overdue_bills = []
-    current_date = datetime.datetime.now()
-    
-    for bill in debt_bills:
+            contract = get_contract_detail(bill['contract_id'], token)
+            if contract:
+                bill['tenant_name'] = contract.get('tenant_info', {}).get('name', '')
+                bill['tenant_phone'] = contract.get('tenant_info', {}).get('phone', '')
+        
+        # Calculate overdue days
         if bill.get('due_date'):
             try:
-                due_date = datetime.datetime.fromisoformat(bill['due_date'])
-                days_overdue = (current_date - due_date).days
-                bill['days_overdue'] = days_overdue if days_overdue > 0 else 0
-                
-                if days_overdue > 0:
-                    overdue_bills.append(bill)
+                due = datetime.datetime.fromisoformat(bill['due_date'])
+                days = (now - due).days
+                bill['days_overdue'] = days if days > 0 else 0
+                if days > 0:
+                    overdue_count += 1
             except:
                 bill['days_overdue'] = 0
     
     return jsonify({
-        'total_debt': total_debt,
+        'total_debt': sum(b['debt_amount'] for b in debt_bills),
         'total_bills': len(debt_bills),
-        'overdue_bills': len(overdue_bills),
+        'overdue_bills': overdue_count,
         'details': debt_bills
     }), 200
 
-# API Báo cáo theo phòng
+
 @app.route('/api/reports/room/<room_id>', methods=['GET'])
 @token_required
 @admin_required
 def get_room_report(current_user, room_id):
+    """Get room-specific report"""
     token = request.headers.get('Authorization')
     
-    # Lấy thông tin phòng
-    room_data = fetch_service_data('room-service', f'/api/rooms/{room_id}', token)
-    
-    # Lấy hợp đồng hiện tại
-    contracts_data = fetch_service_data('contract-service', f'/api/contracts/room/{room_id}', token)
-    
-    # Lấy hóa đơn của phòng
+    room = get_room_detail(room_id, token)
+    contracts = get_room_contracts(room_id, token)
     bills = list(bills_collection.find({'room_id': room_id}).sort('created_at', -1))
     
-    for bill in bills:
-        bill['id'] = bill['_id']
-    
-    # Thống kê
-    total_revenue = sum(bill['total_amount'] for bill in bills if bill['status'] == 'paid')
-    total_debt = sum(bill['debt_amount'] for bill in bills if bill['status'] in ['unpaid', 'partial'])
+    for b in bills:
+        format_bill(b)
     
     return jsonify({
-        'room': room_data,
-        'contracts': contracts_data.get('contracts', []) if contracts_data else [],
+        'room': room,
+        'contracts': contracts.get('contracts', []) if contracts else [],
         'bills': bills,
         'statistics': {
             'total_bills': len(bills),
-            'total_revenue': total_revenue,
-            'total_debt': total_debt
+            'total_revenue': sum(b['total_amount'] for b in bills if b['status'] == 'paid'),
+            'total_debt': sum(b['debt_amount'] for b in bills if b['status'] in ['unpaid', 'partial'])
         }
     }), 200
 
-# API Xuất báo cáo Excel (placeholder - cần thêm thư viện openpyxl)
+
 @app.route('/api/reports/export', methods=['GET'])
 @token_required
 @admin_required
 def export_report(current_user):
-    report_type = request.args.get('type', 'overview')
-    
-    # TODO: Implement Excel export with openpyxl
-    
+    """Export report (placeholder)"""
     return jsonify({
         'message': 'Tính năng xuất Excel đang được phát triển',
-        'report_type': report_type
+        'report_type': request.args.get('type', 'overview')
     }), 501
 
+
+# ============== Entry Point ==============
+
 if __name__ == '__main__':
-    import os
+    print(f"\n{'='*50}\n  {Config.SERVICE_NAME.upper()}\n  Port: {Config.SERVICE_PORT}\n{'='*50}\n")
     register_service()
-    debug_mode = os.getenv('FLASK_DEBUG', 'false').lower() == 'true'
-    app.run(host='0.0.0.0', port=SERVICE_PORT, debug=debug_mode)
+    app.run(host='0.0.0.0', port=Config.SERVICE_PORT, debug=Config.DEBUG)

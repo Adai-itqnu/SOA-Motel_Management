@@ -1,25 +1,31 @@
-from pymongo import MongoClient
-from config import MONGO_URI, DB_NAME, CONTRACTS_COLLECTION
+"""Contract Service Database Models"""
+from pymongo import MongoClient, ASCENDING, DESCENDING
+from config import Config
 
-# MongoDB connection
-client = MongoClient(MONGO_URI)
-db = client[DB_NAME]
-contracts_collection = db[CONTRACTS_COLLECTION]
+class Database:
+    _instance = None
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+            cls._client = MongoClient(Config.MONGO_URI)
+            cls._db = cls._client[Config.DB_NAME]
+        return cls._instance
+    
+    @property
+    def contracts(self):
+        return self._db[Config.COLLECTION_NAME]
 
-# Tạo index cho contracts
-contracts_collection.create_index('tenant_id')
-contracts_collection.create_index('room_id')
-contracts_collection.create_index('status')
+_database = Database()
+contracts_collection = _database.contracts
 
-def get_contracts_collection():
-    """Get contracts collection"""
-    return contracts_collection
+def init_indexes():
+    try:
+        contracts_collection.create_index([('user_id', ASCENDING)])
+        contracts_collection.create_index([('room_id', ASCENDING)])
+        contracts_collection.create_index([('status', ASCENDING)])
+        contracts_collection.create_index([('created_at', DESCENDING)])
+        print("[DB] ✓ Contract indexes created")
+    except Exception as e:
+        print(f"[DB] Index creation: {e}")
 
-def get_db():
-    """Get database instance"""
-    return db
-
-def get_client():
-    """Get MongoDB client"""
-    return client
-
+init_indexes()

@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Quản lý người dùng - Admin</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              primary: "#6366f1",
+              secondary: "#8b5cf6",
+            },
+          },
+        },
+      };
+    </script>
+  </head>
+  <body class="bg-gray-100 min-h-screen">
+    <!-- Sidebar injected by layout.js -->
+    <div id="sidebarContainer"></div>
+
+    <!-- Main Content -->
+    <main class="ml-64 p-8">
+      <!-- Header -->
+      <div
+        class="flex flex-col md:flex-row md:items-center md:justify-between mb-8"
+      >
+        <div>
+          <h1 class="text-3xl font-bold text-gray-800">Quản lý người dùng</h1>
+          <p class="text-gray-500 mt-1">
+            Tìm kiếm, xem và quản lý tài khoản người dùng
+          </p>
+        </div>
+      </div>
+
+      <!-- Search & Filter Bar -->
+      <div class="bg-white rounded-2xl shadow-lg p-6 mb-6">
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <!-- Search Input -->
+          <div class="md:col-span-2">
+            <label class="text-sm text-gray-500 block mb-1">Tìm kiếm</label>
+            <div class="relative">
+              <input
+                type="text"
+                id="searchInput"
+                placeholder="Tên, email, SĐT, CCCD..."
+                class="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition"
+              />
+              <svg
+                class="w-5 h-5 text-gray-400 absolute left-3 top-3"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                ></path>
+              </svg>
+            </div>
+          </div>
+
+          <!-- Role Filter -->
+          <div>
+            <label class="text-sm text-gray-500 block mb-1">Vai trò</label>
+            <select
+              id="roleFilter"
+              class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition"
+            >
+              <option value="">Tất cả</option>
+              <option value="admin">Admin</option>
+              <option value="user">User</option>
+            </select>
+          </div>
+
+          <!-- Status Filter -->
+          <div>
+            <label class="text-sm text-gray-500 block mb-1">Trạng thái</label>
+            <select
+              id="statusFilter"
+              class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition"
+            >
+              <option value="">Tất cả</option>
+              <option value="active">Hoạt động</option>
+              <option value="inactive">Đã khóa</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Stats -->
+        <div class="flex items-center gap-6 mt-4 pt-4 border-t border-gray-100">
+          <span class="text-sm text-gray-500"
+            >Tổng:
+            <strong id="totalUsers" class="text-indigo-600">0</strong> người
+            dùng</span
+          >
+          <span class="text-sm text-gray-500"
+            >Trang: <strong id="currentPage">1</strong> /
+            <strong id="totalPages">1</strong></span
+          >
+        </div>
+      </div>
+
+      <!-- Users Table -->
+      <div class="bg-white rounded-2xl shadow-lg overflow-hidden">
+        <div class="overflow-x-auto">
+          <table class="w-full">
+            <thead class="bg-gray-50">
+              <tr>
+                <th
+                  class="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider"
+                >
+                  Người dùng
+                </th>
+                <th
+                  class="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider"
+                >
+                  Liên hệ
+                </th>
+                <th
+                  class="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider"
+                >
+                  CCCD
+                </th>
+                <th
+                  class="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider"
+                >
+                  Vai trò
+                </th>
+                <th
+                  class="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider"
+                >
+                  Trạng thái
+                </th>
+                <th
+                  class="px-6 py-4 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider"
+                >
+                  Thao tác
+                </th>
+              </tr>
+            </thead>
+            <tbody id="usersTableBody" class="divide-y divide-gray-100">
+              <!-- Users will be rendered here -->
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Pagination -->
+        <div class="px-6 py-4 bg-gray-50 flex items-center justify-between">
+          <button
+            onclick="prevPage()"
+            id="prevBtn"
+            class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            ← Trước
+          </button>
+          <span class="text-sm text-gray-500" id="pageInfo">Trang 1 / 1</span>
+          <button
+            onclick="nextPage()"
+            id="nextBtn"
+            class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            Sau →
+          </button>
+        </div>
+      </div>
+    </main>
+
+    <!-- View/Edit Modal -->
+    <div
+      id="userModal"
+      class="hidden fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+    >
+      <div
+        class="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto"
+      >
+        <div class="p-6 border-b border-gray-100">
+          <div class="flex items-center justify-between">
+            <h3 id="modalTitle" class="text-xl font-bold text-gray-800">
+              Chi tiết người dùng
+            </h3>
+            <button
+              onclick="closeModal()"
+              class="p-2 hover:bg-gray-100 rounded-full transition"
+            >
+              <svg
+                class="w-5 h-5 text-gray-500"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M6 18L18 6M6 6l12 12"
+                ></path>
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <form id="userForm" class="p-6 space-y-4">
+          <input type="hidden" id="userId" />
+
+          <div class="grid grid-cols-2 gap-4">
+            <div>
+              <label class="text-sm font-medium text-gray-700 block mb-1"
+                >Username</label
+              >
+              <input
+                type="text"
+                id="formUsername"
+                readonly
+                class="w-full px-4 py-2.5 border border-gray-200 rounded-xl bg-gray-50"
+              />
+            </div>
+            <div>
+              <label class="text-sm font-medium text-gray-700 block mb-1"
+                >Họ và tên</label
+              >
+              <input
+                type="text"
+                id="formFullname"
+                class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+              />
+            </div>
+          </div>
+
+          <div class="grid grid-cols-2 gap-4">
+            <div>
+              <label class="text-sm font-medium text-gray-700 block mb-1"
+                >Email</label
+              >
+              <input
+                type="email"
+                id="formEmail"
+                class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+              />
+            </div>
+            <div>
+              <label class="text-sm font-medium text-gray-700 block mb-1"
+                >Số điện thoại</label
+              >
+              <input
+                type="text"
+                id="formPhone"
+                class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label class="text-sm font-medium text-gray-700 block mb-1"
+              >CCCD/CMND</label
+            >
+            <input
+              type="text"
+              id="formIdCard"
+              class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+            />
+          </div>
+
+          <div>
+            <label class="text-sm font-medium text-gray-700 block mb-1"
+              >Địa chỉ</label
+            >
+            <textarea
+              id="formAddress"
+              rows="2"
+              class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-none"
+            ></textarea>
+          </div>
+
+          <div class="grid grid-cols-2 gap-4">
+            <div>
+              <label class="text-sm font-medium text-gray-700 block mb-1"
+                >Vai trò</label
+              >
+              <select
+                id="formRole"
+                class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+              >
+                <option value="user">User</option>
+                <option value="admin">Admin</option>
+              </select>
+            </div>
+            <div>
+              <label class="text-sm font-medium text-gray-700 block mb-1"
+                >Trạng thái</label
+              >
+              <select
+                id="formStatus"
+                class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+              >
+                <option value="active">Hoạt động</option>
+                <option value="inactive">Đã khóa</option>
+              </select>
+            </div>
+          </div>
+
+          <div
+            id="formError"
+            class="hidden p-3 bg-red-50 border border-red-200 rounded-xl text-red-600 text-sm"
+          ></div>
+
+          <div class="flex gap-3 pt-4">
+            <button
+              type="button"
+              onclick="closeModal()"
+              class="flex-1 px-4 py-2.5 border border-gray-300 text-gray-700 rounded-xl hover:bg-gray-50 transition font-medium"
+            >
+              Hủy
+            </button>
+            <button
+              type="submit"
+              class="flex-1 px-4 py-2.5 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition font-medium"
+            >
+              Lưu thay đổi
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Delete Confirmation Modal -->
+    <div
+      id="deleteModal"
+      class="hidden fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+    >
+      <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
+        <div class="text-center">
+          <div
+            class="w-16 h-16 mx-auto mb-4 bg-red-100 rounded-full flex items-center justify-center"
+          >
+            <svg
+              class="w-8 h-8 text-red-600"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+              ></path>
+            </svg>
+          </div>
+          <h3 class="text-xl font-bold text-gray-800 mb-2">Xác nhận xóa</h3>
+          <p class="text-gray-500 mb-6">
+            Bạn có chắc muốn xóa người dùng
+            <strong id="deleteUserName" class="text-gray-800"></strong>?
+          </p>
+          <input type="hidden" id="deleteUserId" />
+          <div class="flex gap-3">
+            <button
+              onclick="closeDeleteModal()"
+              class="flex-1 px-4 py-2.5 border border-gray-300 text-gray-700 rounded-xl hover:bg-gray-50 transition font-medium"
+            >
+              Hủy
+            </button>
+            <button
+              onclick="confirmDelete()"
+              class="flex-1 px-4 py-2.5 bg-red-600 text-white rounded-xl hover:bg-red-700 transition font-medium"
+            >
+              Xóa
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script src="/assets/js/common.js"></script>
+    <script src="/assets/js/admin/layout.js"></script>
+    <script src="/assets/js/admin/users.js"></script>
+  </body>
+</html>

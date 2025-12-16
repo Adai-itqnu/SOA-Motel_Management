@@ -1,25 +1,29 @@
-from pymongo import MongoClient
-from config import MONGO_URI, DB_NAME, BILLS_COLLECTION
+"""Report Service Database Models"""
+from pymongo import MongoClient, ASCENDING, DESCENDING
+from config import Config
 
-# MongoDB connection
-client = MongoClient(MONGO_URI)
-db = client[DB_NAME]
-bills_collection = db[BILLS_COLLECTION]
+class Database:
+    _instance = None
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+            cls._client = MongoClient(Config.MONGO_URI)
+            cls._db = cls._client[Config.DB_NAME]
+        return cls._instance
+    
+    @property
+    def bills(self):
+        return self._db[Config.COLLECTION_NAME]
 
-# Tạo index cho bills
-bills_collection.create_index('contract_id')
-bills_collection.create_index('room_id')
-bills_collection.create_index('status')
-bills_collection.create_index([('month', 1), ('year', 1)])
+_database = Database()
+bills_collection = _database.bills
 
-def get_bills_collection():
-    """Get bills collection"""
-    return bills_collection
+def init_indexes():
+    try:
+        bills_collection.create_index([('month', ASCENDING), ('year', ASCENDING)])
+        bills_collection.create_index([('status', ASCENDING)])
+        print("[DB] ✓ Report indexes created")
+    except Exception as e:
+        print(f"[DB] Index: {e}")
 
-def get_db():
-    """Get database instance"""
-    return db
-
-def get_client():
-    """Get MongoDB client"""
-    return client
+init_indexes()

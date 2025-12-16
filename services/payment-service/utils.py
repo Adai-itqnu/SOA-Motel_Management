@@ -9,12 +9,16 @@ def get_service_url(service_name):
         response = requests.get(consul_url, timeout=5)
         if response.ok and response.json():
             service = response.json()[0]
-            return f"http://{service['ServiceAddress']}:{service['ServicePort']}"
+            host = service.get('ServiceAddress') or service.get('Address') or service_name
+            return f"http://{host}:{service['ServicePort']}"
         # Fallback: use service name directly in Docker network
         service_ports = {
             'bill-service': 5007,
             'booking-service': 5005,
-            'notification-service': 5010
+            'contract-service': 5006,
+            'notification-service': 5010,
+            'room-service': 5002,
+            'payment-service': 5008,
         }
         port = service_ports.get(service_name, 5001)
         return f"http://{service_name}:{port}"
@@ -24,7 +28,10 @@ def get_service_url(service_name):
         service_ports = {
             'bill-service': 5007,
             'booking-service': 5005,
-            'notification-service': 5010
+            'contract-service': 5006,
+            'notification-service': 5010,
+            'room-service': 5002,
+            'payment-service': 5008,
         }
         port = service_ports.get(service_name, 5001)
         return f"http://{service_name}:{port}"
@@ -91,7 +98,7 @@ def call_service_api(service_name, method, endpoint, data=None, token=None):
         print(f"Error calling {service_name} {method}: {e}")
         return None
 
-def update_booking_deposit_status(booking_id, status, transaction_id=None):
+def update_booking_deposit_status(booking_id, status, transaction_id=None, payment_id=None):
     """Notify booking-service about deposit status changes."""
     try:
         booking_service_url = get_service_url('booking-service')
@@ -101,6 +108,8 @@ def update_booking_deposit_status(booking_id, status, transaction_id=None):
         payload = {'status': status}
         if transaction_id:
             payload['transaction_id'] = transaction_id
+        if payment_id:
+            payload['payment_id'] = payment_id
         response = requests.put(
             f"{booking_service_url}/api/bookings/{booking_id}/deposit-status",
             json=payload,
@@ -112,6 +121,72 @@ def update_booking_deposit_status(booking_id, status, transaction_id=None):
         return response.ok
     except Exception as exc:
         print(f"Error updating booking deposit status: {exc}")
+        return False
+
+
+def hold_room_reservation(room_id, tenant_id, payment_id):
+    """Hold a room during VNPay deposit payment."""
+    try:
+        room_service_url = get_service_url('room-service')
+        if not room_service_url:
+            print('Room service URL not found for reservation hold')
+            return False
+        payload = {'tenant_id': str(tenant_id), 'payment_id': str(payment_id)}
+        response = requests.put(
+            f"{room_service_url}/internal/rooms/{room_id}/reservation/hold",
+            json=payload,
+            headers={'X-Internal-Api-Key': INTERNAL_API_KEY, 'Content-Type': 'application/json'},
+            timeout=8,
+        )
+        if not response.ok:
+            print(f"Failed to hold room reservation: {response.text}")
+        return response.ok
+    except Exception as exc:
+        print(f"Error holding room reservation: {exc}")
+        return False
+
+
+def confirm_room_reservation(room_id, payment_id):
+    """Confirm room reservation after payment success."""
+    try:
+        room_service_url = get_service_url('room-service')
+        if not room_service_url:
+            print('Room service URL not found for reservation confirm')
+            return False
+        payload = {'payment_id': str(payment_id)}
+        response = requests.put(
+            f"{room_service_url}/internal/rooms/{room_id}/reservation/confirm",
+            json=payload,
+            headers={'X-Internal-Api-Key': INTERNAL_API_KEY, 'Content-Type': 'application/json'},
+            timeout=8,
+        )
+        if not response.ok:
+            print(f"Failed to confirm room reservation: {response.text}")
+        return response.ok
+    except Exception as exc:
+        print(f"Error confirming room reservation: {exc}")
+        return False
+
+
+def release_room_reservation(room_id, payment_id):
+    """Release a held room when payment cancelled/failed."""
+    try:
+        room_service_url = get_service_url('room-service')
+        if not room_service_url:
+            print('Room service URL not found for reservation release')
+            return False
+        payload = {'payment_id': str(payment_id)}
+        response = requests.put(
+            f"{room_service_url}/internal/rooms/{room_id}/reservation/release",
+            json=payload,
+            headers={'X-Internal-Api-Key': INTERNAL_API_KEY, 'Content-Type': 'application/json'},
+            timeout=8,
+        )
+        if not response.ok:
+            print(f"Failed to release room reservation: {response.text}")
+        return response.ok
+    except Exception as exc:
+        print(f"Error releasing room reservation: {exc}")
         return False
 
 def send_notification(user_id, title, message, notification_type, metadata=None):
@@ -161,3 +236,36 @@ def update_bill_status_if_paid(bill_id, total_amount):
         )
         return result is not None
     return False
+
+
+def auto_create_contract(room_id, tenant_id, payment_id, check_in_date=None):
+    """Auto-create contract after successful room deposit payment."""
+    try:
+        contract_service_url = get_service_url('contract-service')
+        if not contract_service_url:
+            print('Contract service URL not found for auto-create')
+            return False
+        
+        payload = {
+            'room_id': room_id,
+            'tenant_id': str(tenant_id),
+            'payment_id': str(payment_id),
+        }
+        if check_in_date:
+            payload['check_in_date'] = check_in_date
+        
+        response = requests.post(
+            f"{contract_service_url}/internal/contracts/auto-create",
+            json=payload,
+            headers={'X-Internal-Api-Key': INTERNAL_API_KEY, 'Content-Type': 'application/json'},
+            timeout=10,
+        )
+        if not response.ok:
+            print(f"Failed to auto-create contract: {response.text}")
+            return False
+        print(f"Auto-created contract for room {room_id}, tenant {tenant_id}")
+        return True
+    except Exception as exc:
+        print(f"Error auto-creating contract: {exc}")
+        return False
+

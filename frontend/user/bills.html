@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html class="light" lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      http-equiv="Cache-Control"
+      content="no-cache, no-store, must-revalidate"
+    />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
+    <title>Hóa đơn - MotelHDK</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800;900&display=swap"
+      rel="stylesheet"
+    />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap"
+    />
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <script>
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              primary: "#ea2a33",
+              "primary-hover": "#d41f27",
+              "bg-soft": "#f8f6f6",
+            },
+            fontFamily: {
+              display: ["Be Vietnam Pro", "sans-serif"],
+              body: ["Be Vietnam Pro", "sans-serif"],
+            },
+            boxShadow: {
+              card: "0 15px 50px rgba(16,24,40,0.08)",
+              glow: "0 20px 45px rgba(234,42,51,0.22)",
+            },
+          },
+        },
+      };
+    </script>
+    <style>
+      ::-webkit-scrollbar {
+        width: 8px;
+      }
+      ::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: #cbd5e1;
+        border-radius: 4px;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: #94a3b8;
+      }
+      /* Dropdown styles - fallback for layout.js */
+      .dropdown-menu {
+        opacity: 0;
+        visibility: hidden;
+        transform: translateY(-6px);
+        transition: all 0.18s ease;
+      }
+      .dropdown-menu.show {
+        opacity: 1;
+        visibility: visible;
+        transform: translateY(0);
+      }
+    </style>
+  </head>
+  <body
+    class="bg-bg-soft text-gray-900 font-display min-h-screen flex flex-col"
+  >
+    <!-- Header placeholder - will be replaced by layout.js -->
+    <div id="layout-header"></div>
+
+    <!-- Main Content -->
+    <main
+      class="flex-1 max-w-[1280px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-8"
+    >
+      <!-- Page Header -->
+      <div class="flex items-center gap-2 text-sm text-gray-500 mb-2">
+        <a href="/user/home.html" class="hover:text-primary">Trang chủ</a>
+        <span class="material-symbols-outlined text-[16px]">chevron_right</span>
+        <span class="text-primary font-medium">Phòng của tôi</span>
+      </div>
+      <div class="flex flex-wrap justify-between items-end gap-4 mb-8">
+        <div class="flex flex-col gap-2">
+          <h1
+            class="text-gray-900 text-3xl md:text-4xl font-black leading-tight tracking-tight"
+          >
+            Quản lý Hóa đơn
+          </h1>
+          <p class="text-gray-500 text-base">
+            Theo dõi chi phí và thanh toán tiền phòng hàng tháng
+          </p>
+        </div>
+        <button
+          class="hidden md:flex items-center gap-2 bg-white border border-gray-200 px-4 py-2 rounded-lg text-sm font-medium shadow-sm hover:bg-gray-50 transition-colors"
+          id="downloadReportBtn"
+        >
+          <span class="material-symbols-outlined text-[18px]">download</span>
+          Xuất báo cáo
+        </button>
+      </div>
+
+      <!-- Stats Cards -->
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
+        <div
+          class="flex flex-col gap-1 rounded-xl p-6 bg-white border border-gray-100 shadow-sm hover:shadow-md transition-shadow"
+        >
+          <div class="flex items-center gap-2 mb-2">
+            <div class="p-2 bg-orange-50 rounded-lg text-orange-600">
+              <span class="material-symbols-outlined text-[24px]"
+                >pending_actions</span
+              >
+            </div>
+            <p class="text-gray-500 text-sm font-medium">Hóa đơn chờ</p>
+          </div>
+          <p
+            class="text-gray-900 text-3xl font-bold leading-tight"
+            id="statPendingCount"
+          >
+            0
+          </p>
+        </div>
+        <div
+          class="flex flex-col gap-1 rounded-xl p-6 bg-white border border-l-4 border-l-primary border-y-gray-100 border-r-gray-100 shadow-sm hover:shadow-md transition-shadow"
+        >
+          <div class="flex items-center gap-2 mb-2">
+            <div class="p-2 bg-red-50 rounded-lg text-primary">
+              <span class="material-symbols-outlined text-[24px]"
+                >payments</span
+              >
+            </div>
+            <p class="text-primary text-sm font-bold">Tổng chưa thanh toán</p>
+          </div>
+          <p
+            class="text-primary text-3xl font-bold leading-tight"
+            id="statUnpaidTotal"
+          >
+            0đ
+          </p>
+        </div>
+        <div
+          class="flex flex-col gap-1 rounded-xl p-6 bg-white border border-gray-100 shadow-sm hover:shadow-md transition-shadow"
+        >
+          <div class="flex items-center gap-2 mb-2">
+            <div class="p-2 bg-green-50 rounded-lg text-green-600">
+              <span class="material-symbols-outlined text-[24px]"
+                >check_circle</span
+              >
+            </div>
+            <p class="text-gray-500 text-sm font-medium">Đã thanh toán</p>
+          </div>
+          <p
+            class="text-gray-900 text-3xl font-bold leading-tight"
+            id="statPaidTotal"
+          >
+            0đ
+          </p>
+        </div>
+      </div>
+
+      <!-- Tabs Filter -->
+      <div class="mb-8 border-b border-gray-200 overflow-x-auto">
+        <div class="flex gap-8">
+          <button
+            data-filter="all"
+            class="group flex items-center gap-2 border-b-[3px] border-primary pb-3 px-1"
+          >
+            <span class="text-primary text-sm font-bold tracking-wide"
+              >Tất cả</span
+            >
+            <span
+              id="tabAllCount"
+              class="bg-primary/10 text-primary text-xs font-bold px-2 py-0.5 rounded-full"
+              >0</span
+            >
+          </button>
+          <button
+            data-filter="pending"
+            class="group flex items-center gap-2 border-b-[3px] border-transparent hover:border-gray-300 pb-3 px-1 transition-colors"
+          >
+            <span
+              class="text-gray-500 group-hover:text-gray-700 text-sm font-medium tracking-wide"
+              >Chờ thanh toán</span
+            >
+            <span
+              id="tabPendingCount"
+              class="bg-gray-100 text-gray-500 text-xs font-bold px-2 py-0.5 rounded-full"
+              >0</span
+            >
+          </button>
+          <button
+            data-filter="paid"
+            class="group flex items-center gap-2 border-b-[3px] border-transparent hover:border-gray-300 pb-3 px-1 transition-colors"
+          >
+            <span
+              class="text-gray-500 group-hover:text-gray-700 text-sm font-medium tracking-wide"
+              >Đã thanh toán</span
+            >
+            <span
+              id="tabPaidCount"
+              class="bg-gray-100 text-gray-500 text-xs font-bold px-2 py-0.5 rounded-full"
+              >0</span
+            >
+          </button>
+        </div>
+      </div>
+
+      <!-- Loading State -->
+      <div
+        id="loadingState"
+        class="flex items-center gap-3 text-gray-500 py-10"
+      >
+        <span class="material-symbols-outlined animate-spin text-[20px]"
+          >progress_activity</span
+        >
+        <span>Đang tải hóa đơn...</span>
+      </div>
+
+      <!-- Error State -->
+      <div
+        id="errorState"
+        class="hidden mb-6 p-4 rounded-xl bg-red-50 border border-red-200 text-red-700"
+      >
+        <span>Đã có lỗi xảy ra.</span>
+      </div>
+
+      <!-- Empty State -->
+      <div id="emptyState" class="hidden text-center py-12 text-gray-500">
+        <div
+          class="inline-flex h-14 w-14 items-center justify-center rounded-full bg-white border border-gray-200 mb-4"
+        >
+          <span class="material-symbols-outlined text-gray-400"
+            >receipt_long</span
+          >
+        </div>
+        <p>Chưa có hóa đơn nào</p>
+      </div>
+
+      <!-- Bills List -->
+      <div id="billList" class="hidden flex flex-col gap-4"></div>
+    </main>
+
+    <!-- Bill Detail Modal -->
+    <div
+      id="billModal"
+      class="hidden fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+    >
+      <div
+        class="relative w-full max-w-2xl bg-white rounded-xl shadow-2xl border border-gray-100 overflow-hidden"
+      >
+        <div
+          class="flex items-center justify-between px-6 py-4 border-b border-gray-100 bg-gray-50"
+        >
+          <div>
+            <h3 id="modalBillTitle" class="text-lg font-bold text-gray-900">
+              Chi tiết Hóa đơn
+            </h3>
+            <p id="modalBillCode" class="text-sm text-gray-500"></p>
+          </div>
+          <button
+            data-close
+            class="text-gray-500 hover:text-gray-900 p-1 rounded-md hover:bg-gray-200 transition-colors"
+            aria-label="Đóng"
+          >
+            <span class="material-symbols-outlined">close</span>
+          </button>
+        </div>
+        <div id="modalBody" class="p-6"></div>
+        <div
+          class="px-6 py-4 bg-gray-50 border-t border-gray-100 flex justify-end gap-3"
+        >
+          <button
+            data-close
+            class="px-4 py-2 rounded-lg border border-gray-200 bg-white text-gray-700 text-sm font-medium hover:bg-gray-100 transition-colors"
+          >
+            Đóng
+          </button>
+          <button
+            id="modalPayBtn"
+            class="px-6 py-2 rounded-lg bg-primary text-white text-sm font-bold hover:bg-primary-hover shadow-md shadow-primary/20 transition-all flex items-center gap-2"
+          >
+            <span class="material-symbols-outlined text-[18px]"
+              >credit_card</span
+            >
+            Thanh toán ngay
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Footer placeholder - will be replaced by layout.js -->
+    <div id="layout-footer"></div>
+
+    <script src="/assets/js/common.js"></script>
+    <script src="/assets/js/user/layout.js"></script>
+    <script src="/assets/js/user/bills.js"></script>
+  </body>
+</html>

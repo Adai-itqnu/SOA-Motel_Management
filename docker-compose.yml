@@ -25,7 +25,7 @@ services:
       - motel-network
     restart: unless-stopped
 
-  # Auth Service
+  # Auth Service (Core - for login/register)
   auth-service:
     build: ./services/auth-service
     container_name: auth-service
@@ -37,6 +37,8 @@ services:
       - CONSUL_HOST=consul
       - CONSUL_PORT=8500
       - SERVICE_PORT=5001
+      - INTERNAL_API_KEY=${INTERNAL_API_KEY:-internal-secret-key}
+      - NOTIFICATION_SERVICE_URL=http://notification-service:5010
     depends_on:
       - mongodb
       - consul
@@ -44,7 +46,7 @@ services:
       - motel-network
     restart: unless-stopped
 
-  # Room Service
+  # Room Service (Core - for viewing rooms)
   room-service:
     build: ./services/room-service
     container_name: room-service
@@ -56,7 +58,7 @@ services:
       - CONSUL_HOST=consul
       - CONSUL_PORT=8500
       - SERVICE_PORT=5002
-      - INTERNAL_API_KEY=internal-api-key-change-me
+      - INTERNAL_API_KEY=${INTERNAL_API_KEY:-internal-secret-key}
     depends_on:
       - mongodb
       - consul
@@ -64,10 +66,10 @@ services:
       - motel-network
     restart: unless-stopped
 
-  # Tenant Service
-  tenant-service:
-    build: ./services/tenant-service
-    container_name: tenant-service
+  # User Service (CRUD Users)
+  user-service:
+    build: ./services/user-service
+    container_name: user-service
     ports:
       - "5003:5003"
     environment:
@@ -76,6 +78,7 @@ services:
       - CONSUL_HOST=consul
       - CONSUL_PORT=8500
       - SERVICE_PORT=5003
+      - INTERNAL_API_KEY=${INTERNAL_API_KEY:-internal-secret-key}
     depends_on:
       - mongodb
       - consul
@@ -83,38 +86,19 @@ services:
       - motel-network
     restart: unless-stopped
 
-  # Report Service
-  report-service:
-    build: ./services/report-service
-    container_name: report-service
-    ports:
-      - "5004:5004"
-    environment:
-      - MONGO_URI=mongodb://mongodb:27017/reports_db
-      - JWT_SECRET=your-super-secret-key-change-this
-      - CONSUL_HOST=consul
-      - CONSUL_PORT=8500
-      - SERVICE_PORT=5004
-    depends_on:
-      - mongodb
-      - consul
-    networks:
-      - motel-network
-    restart: unless-stopped
-
-  # Booking Service
+  # Booking Service (User booking requests)
   booking-service:
     build: ./services/booking-service
     container_name: booking-service
     ports:
       - "5005:5005"
     environment:
-      - MONGO_URI=mongodb://mongodb:27017/users_db
+      - MONGO_URI=mongodb://mongodb:27017/bookings_db
       - JWT_SECRET=your-super-secret-key-change-this
       - CONSUL_HOST=consul
       - CONSUL_PORT=8500
       - SERVICE_PORT=5005
-      - INTERNAL_API_KEY=internal-api-key-change-me
+      - INTERNAL_API_KEY=${INTERNAL_API_KEY:-internal-secret-key}
     depends_on:
       - mongodb
       - consul
@@ -122,19 +106,19 @@ services:
       - motel-network
     restart: unless-stopped
 
-  # Contract Service
+  # Contract Service (Admin contracts)
   contract-service:
     build: ./services/contract-service
     container_name: contract-service
     ports:
       - "5006:5006"
     environment:
-      - MONGO_URI=mongodb://mongodb:27017/users_db
+      - MONGO_URI=mongodb://mongodb:27017/contracts_db
       - JWT_SECRET=your-super-secret-key-change-this
       - CONSUL_HOST=consul
       - CONSUL_PORT=8500
       - SERVICE_PORT=5006
-      - INTERNAL_API_KEY=internal-api-key-change-me
+      - INTERNAL_API_KEY=${INTERNAL_API_KEY:-internal-secret-key}
     depends_on:
       - mongodb
       - consul
@@ -142,7 +126,7 @@ services:
       - motel-network
     restart: unless-stopped
 
-  # Bill Service
+  # Bill Service (Monthly bills)
   bill-service:
     build: ./services/bill-service
     container_name: bill-service
@@ -154,7 +138,7 @@ services:
       - CONSUL_HOST=consul
       - CONSUL_PORT=8500
       - SERVICE_PORT=5007
-      - INTERNAL_API_KEY=internal-api-key-change-me
+      - INTERNAL_API_KEY=${INTERNAL_API_KEY:-internal-secret-key}
     depends_on:
       - mongodb
       - consul
@@ -162,27 +146,31 @@ services:
       - motel-network
     restart: unless-stopped
 
-  # Payment Service
+  # Payment Service (VNPay, payments)
   payment-service:
     build: ./services/payment-service
     container_name: payment-service
     ports:
       - "5008:5008"
     environment:
+      - SERVICE_NAME=payment-service
+      - SERVICE_ID=payment-service-5008
+      - SERVICE_ADDRESS=payment-service
       - MONGO_URI=mongodb://mongodb:27017/payments_db
       - JWT_SECRET=your-super-secret-key-change-this
       - CONSUL_HOST=consul
       - CONSUL_PORT=8500
       - SERVICE_PORT=5008
-      - VNPAY_TMN_CODE=CGXZLS01
-      - VNPAY_HASH_SECRET=SCSECRET0000000000000000000CGXZLS01
-      - VNPAY_URL=https://sandbox.vnpayment.vn/paymentv2/vpcpay.html
-      - VNPAY_RETURN_URL=http://localhost/payment-return
-      - INTERNAL_API_KEY=internal-api-key-change-me
+      - INTERNAL_API_KEY=${INTERNAL_API_KEY:-internal-secret-key}
+      - VNPAY_TMN_CODE=${VNPAY_TMN_CODE:?VNPAY_TMN_CODE is required (set it in .env)}
+      - VNPAY_HASH_SECRET=${VNPAY_HASH_SECRET:?VNPAY_HASH_SECRET is required (set it in .env)}
+      - VNPAY_URL=${VNPAY_URL:-https://sandbox.vnpayment.vn/paymentv2/vpcpay.html}
+      - VNPAY_RETURN_URL=${VNPAY_RETURN_URL:-http://localhost/api/payments/vnpay/return}
+      - VNPAY_CONFIRM_MODE=${VNPAY_CONFIRM_MODE:-return}
+      - VNPAY_IPN_URL=${VNPAY_IPN_URL:-}
     depends_on:
       - mongodb
       - consul
-      - bill-service
     networks:
       - motel-network
     restart: unless-stopped
@@ -199,7 +187,30 @@ services:
       - CONSUL_HOST=consul
       - CONSUL_PORT=8500
       - SERVICE_PORT=5010
-      - INTERNAL_API_KEY=internal-api-key-change-me
+      - INTERNAL_API_KEY=${INTERNAL_API_KEY:-internal-secret-key}
+      - USER_SERVICE_URL=http://user-service:5003
+      - BILL_SERVICE_URL=http://bill-service:5007
+    depends_on:
+      - mongodb
+      - consul
+      - user-service
+    networks:
+      - motel-network
+    restart: unless-stopped
+
+  # Report Service
+  report-service:
+    build: ./services/report-service
+    container_name: report-service
+    ports:
+      - "5009:5009"
+    environment:
+      - MONGO_URI=mongodb://mongodb:27017/bills_db
+      - JWT_SECRET=your-super-secret-key-change-this
+      - CONSUL_HOST=consul
+      - CONSUL_PORT=8500
+      - SERVICE_PORT=5009
+      - INTERNAL_API_KEY=${INTERNAL_API_KEY:-internal-secret-key}
     depends_on:
       - mongodb
       - consul
@@ -207,28 +218,17 @@ services:
       - motel-network
     restart: unless-stopped
 
-  # Frontend Service
+  # Frontend (internal only - access via nginx port 80)
   frontend:
     build: ./frontend
     container_name: frontend
-    ports:
-      - "5000:5000"
-    environment:
-      - API_GATEWAY_URL=
-    depends_on:
-      - auth-service
-      - room-service
-      - tenant-service
-      - report-service
-      - booking-service
-      - contract-service
-      - bill-service
-      - payment-service
+    expose:
+      - "3000"
     networks:
       - motel-network
     restart: unless-stopped
 
-  # Nginx API Gateway + Consul Template
+  # Nginx API Gateway
   nginx:
     build: ./nginx
     container_name: nginx-gateway
@@ -239,15 +239,15 @@ services:
       - CONSUL_PORT=8500
     depends_on:
       - consul
+      - frontend
       - auth-service
       - room-service
-      - tenant-service
-      - report-service
+      - user-service
       - booking-service
       - contract-service
-      - bill-service
       - payment-service
-      - frontend
+      - notification-service
+      - report-service
     networks:
       - motel-network
     restart: unless-stopped
