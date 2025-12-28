@@ -1,8 +1,11 @@
 /**
  * User Rooms Page JavaScript
  * - View available rooms
- * - Hold room by paying deposit via VNPay (no admin approval)
+ * - Hold room by paying deposit via VNPay with check-in date
  */
+
+let currentRoomData = null;
+
 document.addEventListener("DOMContentLoaded", () => {
   if (!Auth.checkAuth("user")) return;
   loadUserInfo();
@@ -20,15 +23,47 @@ document.addEventListener("DOMContentLoaded", () => {
   document
     .getElementById("roomDetailNext")
     ?.addEventListener("click", () => stepRoomDetailImage(1));
+  document
+    .getElementById("roomDetailBookBtn")
+    ?.addEventListener("click", () => {
+      if (currentRoomData) openBookingModal(currentRoomData);
+    });
 
   const modal = document.getElementById("roomDetailModal");
   modal?.addEventListener("click", (e) => {
     if (e.target && e.target.id === "roomDetailModal") closeRoomDetailModal();
   });
 
-  document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape") closeRoomDetailModal();
+  // Booking form modal events
+  document
+    .getElementById("bookingFormClose")
+    ?.addEventListener("click", closeBookingModal);
+  document
+    .getElementById("bookingFormCancelBtn")
+    ?.addEventListener("click", closeBookingModal);
+  document
+    .getElementById("bookingForm")
+    ?.addEventListener("submit", handleBookingSubmit);
+
+  const bookingModal = document.getElementById("bookingFormModal");
+  bookingModal?.addEventListener("click", (e) => {
+    if (e.target && e.target.id === "bookingFormModal") closeBookingModal();
   });
+
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+      closeRoomDetailModal();
+      closeBookingModal();
+    }
+  });
+
+  // Set min date for check-in to today
+  const checkInInput = document.getElementById("bookingCheckInDate");
+  if (checkInInput) {
+    const today = new Date().toISOString().split("T")[0];
+    checkInInput.min = today;
+    checkInInput.value = today;
+  }
 });
 
 function loadUserInfo() {
@@ -405,6 +440,9 @@ async function openRoomDetailModal(roomId) {
   roomDetailImages = Array.isArray(room.images) ? room.images : [];
   roomDetailIndex = 0;
   updateRoomDetailImage();
+
+  // Store room data for booking modal
+  currentRoomData = { ...room, _id: roomId };
 }
 
 function closeRoomDetailModal() {
@@ -438,41 +476,120 @@ function updateRoomDetailImage() {
   }
 }
 
+// ============== BOOKING MODAL FUNCTIONS ==============
+
+function openBookingModal(room) {
+  const modal = document.getElementById("bookingFormModal");
+  if (!modal) return;
+
+  // Get user info from Auth
+  const user = Auth.getUser();
+  const userName = user.fullname || user.name || user.username || "";
+  const userPhone = user.phone || user.phone_number || "";
+
+  // Set form values
+  document.getElementById("bookingRoomId").value = room._id || "";
+  document.getElementById("bookingRoomInfo").textContent = `${room.name || room._id} - ${UI.formatCurrency(room.price || 0)}/tháng`;
+  document.getElementById("bookingUserName").value = userName;
+  document.getElementById("bookingUserPhone").value = userPhone;
+  document.getElementById("bookingDepositAmount").value = room.deposit || 0;
+  document.getElementById("bookingDepositDisplay").textContent = UI.formatCurrency(room.deposit || 0);
+
+  // Set default check-in date to today
+  const today = new Date().toISOString().split("T")[0];
+  const checkInInput = document.getElementById("bookingCheckInDate");
+  if (checkInInput) {
+    checkInInput.min = today;
+    if (!checkInInput.value) checkInInput.value = today;
+  }
+
+  // Hide error
+  document.getElementById("bookingFormError")?.classList.add("hidden");
+
+  // Show modal
+  modal.classList.remove("hidden");
+}
+
+function closeBookingModal() {
+  document.getElementById("bookingFormModal")?.classList.add("hidden");
+}
+
+function showBookingError(message) {
+  const errorEl = document.getElementById("bookingFormError");
+  if (errorEl) {
+    errorEl.textContent = message;
+    errorEl.classList.remove("hidden");
+  }
+}
+
+async function handleBookingSubmit(e) {
+  e.preventDefault();
+
+  const roomId = document.getElementById("bookingRoomId")?.value;
+  const checkInDate = document.getElementById("bookingCheckInDate")?.value;
+  const depositAmount = parseFloat(document.getElementById("bookingDepositAmount")?.value) || 0;
+
+  if (!roomId) {
+    showBookingError("Không tìm thấy thông tin phòng!");
+    return;
+  }
+
+  if (!checkInDate) {
+    showBookingError("Vui lòng chọn ngày check-in!");
+    return;
+  }
+
+  const submitBtn = document.getElementById("bookingFormSubmitBtn");
+  const originalText = submitBtn?.textContent || "Thanh toán qua VNPay";
+
+  try {
+    if (submitBtn) {
+      submitBtn.disabled = true;
+      submitBtn.textContent = "Đang xử lý...";
+    }
+
+    // Call API to create payment with booking info
+    const res = await API.post("/payments/vnpay/room-deposit/create", {
+      room_id: roomId,
+      check_in_date: checkInDate,
+    });
+
+    if (!res.ok) {
+      showBookingError(res.data?.message || "Không thể tạo thanh toán. Vui lòng thử lại.");
+      return;
+    }
+
+    const paymentUrl = res.data?.payment_url;
+    if (!paymentUrl) {
+      showBookingError("Không nhận được link thanh toán từ server.");
+      return;
+    }
+
+    // Redirect to VNPay
+    window.location.href = paymentUrl;
+
+  } catch (error) {
+    console.error("Booking submit error:", error);
+    showBookingError("Lỗi kết nối. Vui lòng thử lại.");
+  } finally {
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.textContent = originalText;
+    }
+  }
+}
+
 async function reserveRoomVnpay(roomId) {
-  const noticeEl = document.getElementById("vnpayNotice");
-  if (noticeEl) noticeEl.classList.add("hidden");
-
-  const res = await API.post("/payments/vnpay/room-deposit/create", {
-    room_id: roomId,
-  });
+  // Fetch room data and open booking modal instead of direct VNPay
+  const res = await API.get(`/rooms/public/${encodeURIComponent(roomId)}`);
   if (!res.ok) {
-    if (noticeEl) {
-      setVnpayNotice(noticeEl, {
-        title: "Không thể giữ phòng",
-        message: res.data?.message || "Vui lòng thử lại.",
-        cls: "bg-red-50 border border-red-200 text-red-800",
-        baseInfo: roomId ? `Room: ${roomId}` : "",
-      });
-    } else {
-      alert(res.data?.message || "Không thể giữ phòng");
-    }
+    alert(res.data?.message || "Không thể tải thông tin phòng.");
     return;
   }
 
-  const paymentUrl = res.data?.payment_url;
-  if (!paymentUrl) {
-    if (noticeEl) {
-      setVnpayNotice(noticeEl, {
-        title: "Không thể tạo thanh toán",
-        message: "Thiếu payment_url từ server.",
-        cls: "bg-red-50 border border-red-200 text-red-800",
-        baseInfo: roomId ? `Room: ${roomId}` : "",
-      });
-    }
-    return;
-  }
-
-  window.location.href = paymentUrl;
+  const room = res.data || {};
+  room._id = roomId;
+  openBookingModal(room);
 }
 
 async function loadMyReservedRooms() {

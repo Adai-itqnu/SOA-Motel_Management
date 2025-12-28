@@ -66,85 +66,120 @@ function updateStats() {
 }
 
 function renderRooms() {
-  const tbody = document.getElementById("roomTableBody");
-  if (!tbody) return;
+  UI.hide("roomsLoading");
 
   if (filteredRooms.length === 0) {
-    tbody.innerHTML = `
-            <tr>
-                <td colspan="5" class="px-6 py-8 text-center text-gray-400">
-                    <svg class="w-12 h-12 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"></path>
-                    </svg>
-                    <p>Chưa có phòng nào</p>
-                    <button onclick="openAddModal()" class="mt-2 text-indigo-600 hover:underline">+ Thêm phòng mới</button>
-                </td>
-            </tr>
-        `;
+    UI.show("roomsEmpty");
+    UI.hide("roomsGrid");
     return;
   }
 
-  tbody.innerHTML = filteredRooms
-    .map(
-      (room) => `
-        <tr class="hover:bg-gray-50 transition-colors">
-            <td class="px-6 py-4">
-                <div class="flex items-center gap-3">
-                    <div class="w-10 h-10 bg-indigo-100 rounded-xl flex items-center justify-center">
-                        <span class="text-indigo-600 font-bold text-sm">${(
-                          room.name || "P"
-                        ).charAt(0)}</span>
-                    </div>
-                    <div>
-                        <p class="font-semibold text-gray-800">${
-                          room.name || "N/A"
-                        }</p>
-                        <p class="text-sm text-gray-400">${
-                          room.description || ""
-                        }</p>
-                    </div>
-                </div>
-            </td>
-            <td class="px-6 py-4 text-gray-600">${getRoomTypeLabel(
-              room.room_type
-            )}</td>
-            <td class="px-6 py-4 font-semibold text-indigo-600">${formatCurrency(
-              room.price
-            )}</td>
-            <td class="px-6 py-4">${getStatusBadge(room.status)}</td>
-            <td class="px-6 py-4">
-                <div class="flex items-center justify-center gap-2">
-                    ${
-                      room.status === "reserved" &&
-                      room.reserved_by_tenant_id &&
-                      String(room.reservation_status || "") === "paid"
-                        ? `<button onclick="openContractModal('${room._id}')" class="p-2 text-purple-700 hover:bg-purple-50 rounded-lg" title="Tạo hợp đồng">
-                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
-                            </svg>
-                          </button>`
-                        : ""
-                    }
-                    <button onclick="openEditModal('${
-                      room._id
-                    }')" class="p-2 text-blue-600 hover:bg-blue-50 rounded-lg" title="Sửa">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path>
-                        </svg>
-                    </button>
-                    <button onclick="openDeleteModal('${room._id}', '${
-        room.name
-      }')" class="p-2 text-red-600 hover:bg-red-50 rounded-lg" title="Xóa">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
-                        </svg>
-                    </button>
-                </div>
-            </td>
-        </tr>
-    `
-    )
-    .join("");
+  UI.hide("roomsEmpty");
+  const grid = document.getElementById("roomsGrid");
+  if (!grid) return;
+
+  grid.innerHTML = filteredRooms.map(room => {
+    // Images from API are already data URL strings (data:image/jpeg;base64,...)
+    const images = Array.isArray(room.images) ? room.images : [];
+    const firstImage = images.length > 0 ? images[0] : "";
+    const placeholderImg = "/assets/images/room-placeholder.svg";
+    const displayImgUrl = firstImage || placeholderImg;
+
+    const area = Number(room.area || room.area_m2 || 0);
+    const amenities = Array.isArray(room.amenities) ? room.amenities : [];
+
+    const showContractBtn = room.status === "reserved" &&
+      room.reserved_by_tenant_id &&
+      String(room.reservation_status || "") === "paid";
+
+    return `
+      <div class="bg-white rounded-2xl shadow-lg overflow-hidden flex flex-col">
+        <div class="relative">
+          <img src="${displayImgUrl}" alt="${escapeHtml(room.name || room._id)}" 
+            class="w-full h-48 object-cover" 
+            onerror="this.src='${placeholderImg}'" />
+          <div class="absolute top-3 right-3">
+            ${getStatusBadge(room.status)}
+          </div>
+        </div>
+        
+        <div class="p-5 flex flex-col flex-1">
+          <div class="flex items-start justify-between gap-2 mb-3">
+            <div>
+              <h3 class="text-lg font-bold text-gray-800">${escapeHtml(room.name || "N/A")}</h3>
+              <p class="text-sm text-gray-500">${getRoomTypeLabel(room.room_type)}${area ? ` • ${area} m²` : ""}</p>
+            </div>
+          </div>
+
+          <div class="flex flex-wrap gap-2 text-xs mb-3">
+            ${amenities.slice(0, 5).map(a => 
+              `<span class="px-2 py-1 bg-gray-100 text-gray-600 rounded-full">${escapeHtml(amenityLabel(a))}</span>`
+            ).join("")}
+            ${amenities.length > 5 ? `<span class="px-2 py-1 bg-gray-100 text-gray-600 rounded-full">+${amenities.length - 5}</span>` : ""}
+          </div>
+
+          <div class="space-y-1 text-sm mb-4">
+            <div class="flex items-center justify-between">
+              <span class="text-gray-500">Giá thuê/tháng</span>
+              <span class="font-semibold text-indigo-600">${formatCurrency(room.price)}</span>
+            </div>
+            <div class="flex items-center justify-between">
+              <span class="text-gray-500">Tiền cọc</span>
+              <span class="font-semibold text-gray-800">${formatCurrency(room.deposit || 0)}</span>
+            </div>
+          </div>
+
+          ${room.description ? `<p class="text-sm text-gray-500 line-clamp-2 mb-4">${escapeHtml(room.description)}</p>` : ""}
+
+          <div class="mt-auto flex gap-2">
+            ${showContractBtn ? `
+              <button onclick="openContractModal('${room._id}')" 
+                class="flex-1 px-3 py-2 bg-purple-100 text-purple-700 rounded-xl text-sm font-medium hover:bg-purple-200 transition">
+                Tạo hợp đồng
+              </button>
+            ` : ""}
+            <button onclick="openEditModal('${room._id}')" 
+              class="flex-1 px-3 py-2 bg-indigo-100 text-indigo-700 rounded-xl text-sm font-medium hover:bg-indigo-200 transition">
+              Sửa
+            </button>
+            <button onclick="openDeleteModal('${room._id}', '${escapeHtml(room.name)}')" 
+              class="px-3 py-2 bg-red-100 text-red-700 rounded-xl text-sm font-medium hover:bg-red-200 transition">
+              Xóa
+            </button>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join("");
+
+  UI.show("roomsGrid");
+}
+
+function amenityLabel(a) {
+  switch (String(a || "").toLowerCase()) {
+    case "wifi": return "📶 WiFi";
+    case "air_conditioner": return "❄️ Máy lạnh";
+    case "water_heater": return "🚿 Nước nóng";
+    case "washing_machine": return "🧺 Máy giặt";
+    case "fridge": return "🧊 Tủ lạnh";
+    case "kitchen": return "🍳 Bếp";
+    case "private_wc": return "🚽 WC riêng";
+    case "balcony": return "🌇 Ban công";
+    case "parking": return "🏍️ Chỗ để xe";
+    case "security": return "🔒 Bảo vệ";
+    case "elevator": return "🛗 Thang máy";
+    case "furniture": return "🛋️ Nội thất";
+    default: return a || "--";
+  }
+}
+
+function escapeHtml(str) {
+  return String(str)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
 }
 
 function getRoomTypeLabel(type) {

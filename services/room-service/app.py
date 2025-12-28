@@ -385,9 +385,14 @@ def internal_hold_room_reservation(room_id):
 @app.route('/internal/rooms/<room_id>/reservation/confirm', methods=['PUT'])
 @internal_api_required
 def internal_confirm_room_reservation(room_id):
-    """Confirm a room reservation after VNPay completed (internal)."""
+    """Confirm a room reservation after VNPay completed (internal).
+    
+    Robust handling: If room wasn't properly held before, we still mark it as reserved.
+    """
     data = request.get_json() or {}
     payment_id = data.get('payment_id')
+    tenant_id = data.get('tenant_id')
+    
     if not payment_id:
         return jsonify({'message': 'Thiếu payment_id!'}), 400
 
@@ -395,15 +400,29 @@ def internal_confirm_room_reservation(room_id):
     if not room:
         return jsonify({'message': 'Phòng không tồn tại!'}), 404
 
-    if room.get('status') != Config.STATUS_RESERVED:
-        return jsonify({'message': 'Phòng chưa ở trạng thái giữ!'}), 400
-    if str(room.get('reserved_payment_id') or '') != str(payment_id):
-        return jsonify({'message': 'payment_id không khớp với phòng đang giữ!'}), 400
-
-    rooms_collection.update_one(
-        {'_id': room_id},
-        {'$set': {'reservation_status': 'paid', 'updated_at': get_timestamp()}},
-    )
+    # Check if room is already occupied
+    if room.get('status') == Config.STATUS_OCCUPIED:
+        return jsonify({'message': 'Phòng đã có người thuê!'}), 400
+    
+    # If room is reserved, verify payment_id matches
+    if room.get('status') == Config.STATUS_RESERVED:
+        if str(room.get('reserved_payment_id') or '') != str(payment_id):
+            # Different payment - room was held by another payment
+            return jsonify({'message': 'Phòng đang được giữ bởi giao dịch khác!'}), 400
+    
+    # Update room to reserved with paid status
+    update_fields = {
+        'status': Config.STATUS_RESERVED,
+        'reservation_status': 'paid',
+        'reserved_payment_id': str(payment_id),
+        'updated_at': get_timestamp()
+    }
+    
+    # Set tenant_id if provided
+    if tenant_id:
+        update_fields['reserved_by_tenant_id'] = str(tenant_id)
+    
+    rooms_collection.update_one({'_id': room_id}, {'$set': update_fields})
     return jsonify({'message': 'Xác nhận giữ phòng thành công!', 'room_id': room_id}), 200
 
 

@@ -636,6 +636,8 @@ def vnpay_create_bill_payment(current_user):
 def vnpay_create_room_deposit(current_user):
     data = request.get_json() or {}
     room_id = data.get("room_id")
+    check_in_date = data.get("check_in_date")  # Expected check-in date
+    
     if not room_id:
         return jsonify({"message": "Missing room_id"}), 400
 
@@ -668,15 +670,17 @@ def vnpay_create_room_deposit(current_user):
         "method": "vnpay",
         "provider": "vnpay",
         "status": "pending",
+        "check_in_date": check_in_date,
         "created_at": _utc_now_iso(),
         "updated_at": _utc_now_iso(),
     }
     payments_collection.insert_one(payment_doc)
 
-    # Hold room immediately so others can't pay for the same room.
+    # Hold the room BEFORE redirecting to VNPay to prevent double booking
     if not hold_room_reservation(room_id, tenant_id, payment_id):
+        # If hold fails, delete payment and return error
         payments_collection.delete_one({"_id": payment_id})
-        return jsonify({"message": "Không thể giữ phòng. Vui lòng thử lại!"}), 409
+        return jsonify({"message": "Không thể giữ phòng. Phòng có thể đã được đặt bởi người khác."}), 400
 
     order_info = f"Thanh toan coc giu phong {room_id}"
     payment_url = build_payment_url(
@@ -896,12 +900,8 @@ def vnpay_return():
                                     )
                             if payment.get("payment_type") == "room_reservation_deposit" and payment.get("room_id"):
                                 confirm_room_reservation(payment["room_id"], txn_ref)
-                                # Auto-create contract
-                                auto_create_contract(
-                                    room_id=payment["room_id"],
-                                    tenant_id=payment.get("tenant_id"),
-                                    payment_id=txn_ref
-                                )
+                                # NOTE: Do NOT auto-create contract here
+                                # Contract is created when user clicks "Nhận phòng" on check-in date
                         else:
                             set_fields["status"] = "failed"
                             payments_collection.update_one({"_id": txn_ref}, {"$set": set_fields})
@@ -1031,18 +1031,14 @@ def vnpay_return():
             # Finalize reservation if this is room deposit.
             if is_room_reservation and room_id:
                 confirm_room_reservation(room_id, txn_ref)
-                # Auto-create contract
-                if payment:
-                    auto_create_contract(room_id, payment.get("tenant_id"), txn_ref)
+                # NOTE: Contract created when user clicks check-in, not here
             return redirect(f"{frontend_redirect_base}?vnpay=success&{suffix}")
         if mode == "ipn":
             return redirect(f"{frontend_redirect_base}?vnpay=pending&code=ipn&{suffix}")
         if verified:
             if is_room_reservation and room_id:
                 confirm_room_reservation(room_id, txn_ref)
-                # Auto-create contract
-                if payment:
-                    auto_create_contract(room_id, payment.get("tenant_id"), txn_ref)
+                # NOTE: Contract created when user clicks check-in, not here
             return redirect(f"{frontend_redirect_base}?vnpay=success&{suffix}")
         code = verified_code or verified_txn_status or "pending"
         return redirect(f"{frontend_redirect_base}?vnpay=pending&code={code}&{suffix}")

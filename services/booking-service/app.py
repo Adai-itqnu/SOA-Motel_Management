@@ -116,37 +116,6 @@ def get_booking(current_user, booking_id):
     return jsonify(format_booking_response(booking)), 200
 
 
-@app.route('/api/bookings/<booking_id>/pay-deposit', methods=['PUT'])
-@token_required
-def pay_deposit(current_user, booking_id):
-    """Mark deposit as paid (cash payment)"""
-    booking = bookings_collection.find_one({'_id': booking_id})
-    if not booking:
-        return jsonify({'message': 'Booking không tồn tại!'}), 404
-    
-    user_id = current_user.get('user_id') or current_user.get('_id')
-    if booking['user_id'] != user_id:
-        return jsonify({'message': 'Không có quyền!'}), 403
-    
-    if booking['deposit_status'] == 'paid':
-        return jsonify({'message': 'Đã thanh toán cọc rồi!'}), 400
-    
-    data = request.get_json() or {}
-    
-    bookings_collection.update_one(
-        {'_id': booking_id},
-        {'$set': {
-            'deposit_status': 'paid',
-            'deposit_paid_at': get_timestamp(),
-            'payment_method': data.get('payment_method', 'cash'),
-            'status': 'deposit_paid',
-            'updated_at': get_timestamp()
-        }}
-    )
-    
-    return jsonify({'message': 'Thanh toán cọc thành công!'}), 200
-
-
 @app.route('/api/bookings/<booking_id>/deposit-status', methods=['PUT'])
 @internal_api_required
 def update_deposit_status_internal(booking_id):
@@ -195,7 +164,7 @@ def cancel_booking(current_user, booking_id):
     if booking['user_id'] != user_id:
         return jsonify({'message': 'Không có quyền hủy booking này!'}), 403
     
-    if booking['status'] in ['approved', 'cancelled']:
+    if booking['status'] in ['checked_in', 'cancelled']:
         return jsonify({'message': f"Không thể hủy booking đã {booking['status']}!"}), 400
     
     update = {
@@ -211,68 +180,218 @@ def cancel_booking(current_user, booking_id):
     return jsonify({'message': 'Hủy booking thành công!'}), 200
 
 
-# ============== Admin Booking APIs ==============
+# ============== User Check-in APIs ==============
 
-@app.route('/api/bookings/<booking_id>/approve', methods=['PUT'])
+import requests
+
+def get_service_url(service_name):
+    """Get service URL from Consul or fallback to environment"""
+    import os
+    # Fallback to environment variables
+    service_map = {
+        'contract-service': os.getenv('CONTRACT_SERVICE_URL', 'http://contract-service:5006'),
+        'room-service': os.getenv('ROOM_SERVICE_URL', 'http://room-service:5002'),
+        'payment-service': os.getenv('PAYMENT_SERVICE_URL', 'http://payment-service:5007'),
+    }
+    return service_map.get(service_name)
+
+
+@app.route('/api/bookings/<booking_id>/check-in', methods=['POST'])
 @token_required
-@admin_required
-def approve_booking(current_user, booking_id):
-    """Approve a booking (admin only)"""
+def check_in_booking(current_user, booking_id):
+    """User confirms check-in, system auto-creates contract"""
     booking = bookings_collection.find_one({'_id': booking_id})
     if not booking:
         return jsonify({'message': 'Booking không tồn tại!'}), 404
     
-    if booking['status'] not in ['pending', 'deposit_paid']:
-        return jsonify({'message': f"Không thể duyệt booking đã {booking['status']}!"}), 400
+    user_id = current_user.get('user_id') or current_user.get('_id')
+    if booking['user_id'] != user_id:
+        return jsonify({'message': 'Không có quyền check-in booking này!'}), 403
     
     # Check if deposit is paid
-    if booking['deposit_status'] != 'paid':
-        return jsonify({'message': 'Người đặt chưa thanh toán cọc!'}), 400
+    if booking.get('deposit_status') != 'paid' and booking.get('status') != 'deposit_paid':
+        return jsonify({'message': 'Bạn chưa thanh toán cọc!'}), 400
     
-    data = request.get_json() or {}
+    # Check if already checked in
+    if booking.get('status') == 'checked_in':
+        return jsonify({'message': 'Bạn đã check-in rồi!'}), 400
     
+    # Call contract-service to auto-create contract
+    contract_service_url = get_service_url('contract-service')
+    if not contract_service_url:
+        return jsonify({'message': 'Không thể kết nối contract-service!'}), 503
+    
+    try:
+        resp = requests.post(
+            f"{contract_service_url}/internal/contracts/auto-create",
+            json={
+                'room_id': booking['room_id'],
+                'tenant_id': str(user_id),
+                'payment_id': booking.get('deposit_payment_id'),
+                'check_in_date': booking.get('check_in_date')
+            },
+            headers={'X-Internal-Api-Key': Config.INTERNAL_API_KEY},
+            timeout=10,
+        )
+        
+        if not resp.ok:
+            error_msg = resp.json().get('message', 'Lỗi tạo hợp đồng') if resp.headers.get('content-type', '').startswith('application/json') else resp.text
+            return jsonify({'message': error_msg}), resp.status_code
+        
+    except Exception as e:
+        return jsonify({'message': f'Lỗi kết nối: {str(e)}'}), 503
+    
+    # Update booking status
     bookings_collection.update_one(
         {'_id': booking_id},
         {'$set': {
-            'status': 'approved',
-            'admin_note': data.get('admin_note', ''),
+            'status': 'checked_in',
+            'checked_in_at': get_timestamp(),
             'updated_at': get_timestamp()
         }}
     )
     
     return jsonify({
-        'message': 'Duyệt booking thành công! Vui lòng tạo hợp đồng cho người thuê.',
+        'message': 'Check-in thành công! Hợp đồng đã được tạo tự động.',
         'booking_id': booking_id
     }), 200
 
 
-@app.route('/api/bookings/<booking_id>/reject', methods=['PUT'])
+@app.route('/api/bookings/check-in-from-payment', methods=['POST'])
 @token_required
-@admin_required
-def reject_booking(current_user, booking_id):
-    """Reject a booking (admin only)"""
-    booking = bookings_collection.find_one({'_id': booking_id})
-    if not booking:
-        return jsonify({'message': 'Booking không tồn tại!'}), 404
-    
-    if booking['status'] in ['approved', 'cancelled', 'rejected']:
-        return jsonify({'message': f"Booking đã được {booking['status']}!"}), 400
-    
+def check_in_from_payment(current_user):
+    """Check-in directly from payment when no booking record exists"""
     data = request.get_json() or {}
+    payment_id = data.get('payment_id')
+    room_id = data.get('room_id')
+    check_in_date = data.get('check_in_date')
     
-    update = {
-        'status': 'rejected',
-        'admin_note': data.get('reason', ''),
-        'updated_at': get_timestamp()
+    if not payment_id or not room_id:
+        return jsonify({'message': 'Thiếu payment_id hoặc room_id!'}), 400
+    
+    user_id = current_user.get('user_id') or current_user.get('_id')
+    
+    # Check if already has active contract
+    contract_service_url = get_service_url('contract-service')
+    if not contract_service_url:
+        return jsonify({'message': 'Không thể kết nối contract-service!'}), 503
+    
+    # Call contract-service to auto-create contract
+    try:
+        resp = requests.post(
+            f"{contract_service_url}/internal/contracts/auto-create",
+            json={
+                'room_id': room_id,
+                'tenant_id': str(user_id),
+                'payment_id': payment_id,
+                'check_in_date': check_in_date
+            },
+            headers={'X-Internal-Api-Key': Config.INTERNAL_API_KEY},
+            timeout=10,
+        )
+        
+        if not resp.ok:
+            error_msg = 'Lỗi tạo hợp đồng'
+            try:
+                error_msg = resp.json().get('message', error_msg)
+            except:
+                error_msg = resp.text or error_msg
+            return jsonify({'message': error_msg}), resp.status_code
+        
+    except Exception as e:
+        return jsonify({'message': f'Lỗi kết nối: {str(e)}'}), 503
+    
+    # Create a booking record for history
+    timestamp = get_timestamp()
+    booking_id = generate_booking_id()
+    
+    new_booking = {
+        '_id': booking_id,
+        'room_id': room_id,
+        'user_id': user_id,
+        'check_in_date': check_in_date or timestamp[:10],
+        'deposit_amount': 0,  # We don't have this info here
+        'deposit_status': 'paid',
+        'deposit_payment_id': payment_id,
+        'payment_method': 'vnpay',
+        'status': 'checked_in',
+        'checked_in_at': timestamp,
+        'admin_note': 'Check-in từ thanh toán VNPay',
+        'created_at': timestamp,
+        'updated_at': timestamp
     }
     
-    # Refund deposit if paid
-    if booking['deposit_status'] == 'paid':
-        update['deposit_status'] = 'refunded'
+    try:
+        bookings_collection.insert_one(new_booking)
+    except Exception as e:
+        print(f"Warning: Could not create booking record: {e}")
     
-    bookings_collection.update_one({'_id': booking_id}, {'$set': update})
+    return jsonify({
+        'message': 'Check-in thành công! Hợp đồng đã được tạo tự động.',
+        'booking_id': booking_id
+    }), 200
+
+
+# ============== Internal APIs ==============
+
+@app.route('/internal/bookings/create-from-payment', methods=['POST'])
+@internal_api_required
+def create_booking_from_payment():
+    """Create booking record when room deposit payment is successful (called by payment-service)."""
+    data = request.get_json() or {}
     
-    return jsonify({'message': 'Từ chối booking thành công!'}), 200
+    room_id = data.get('room_id')
+    user_id = data.get('user_id')
+    
+    if not room_id or not user_id:
+        return jsonify({'message': 'Missing room_id or user_id'}), 400
+    
+    # Check if booking already exists for this room and user
+    existing = bookings_collection.find_one({
+        'room_id': room_id,
+        'user_id': user_id,
+        'status': {'$in': ['pending', 'deposit_paid']}
+    })
+    if existing:
+        # Update existing booking
+        bookings_collection.update_one(
+            {'_id': existing['_id']},
+            {'$set': {
+                'deposit_status': 'paid',
+                'deposit_payment_id': data.get('deposit_payment_id'),
+                'deposit_amount': data.get('deposit_amount', 0),
+                'payment_method': data.get('payment_method', 'vnpay'),
+                'status': 'deposit_paid',
+                'check_in_date': data.get('check_in_date') or existing.get('check_in_date'),
+                'updated_at': get_timestamp()
+            }}
+        )
+        return jsonify({'message': 'Booking updated', 'booking_id': existing['_id']}), 200
+    
+    # Create new booking
+    timestamp = get_timestamp()
+    booking_id = generate_booking_id()
+    
+    new_booking = {
+        '_id': booking_id,
+        'room_id': room_id,
+        'user_id': user_id,
+        'check_in_date': data.get('check_in_date') or timestamp[:10],
+        'deposit_amount': data.get('deposit_amount', 0),
+        'deposit_status': 'paid',
+        'deposit_paid_at': timestamp,
+        'deposit_payment_id': data.get('deposit_payment_id'),
+        'payment_method': data.get('payment_method', 'vnpay'),
+        'status': 'deposit_paid',
+        'created_at': timestamp,
+        'updated_at': timestamp
+    }
+    
+    try:
+        bookings_collection.insert_one(new_booking)
+        return jsonify({'message': 'Booking created', 'booking_id': booking_id}), 201
+    except Exception as e:
+        return jsonify({'message': f'Error creating booking: {str(e)}'}), 500
 
 
 # ============== Entry Point ==============

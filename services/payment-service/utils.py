@@ -147,13 +147,23 @@ def hold_room_reservation(room_id, tenant_id, payment_id):
 
 
 def confirm_room_reservation(room_id, payment_id):
-    """Confirm room reservation after payment success."""
+    """Confirm room reservation after payment success and create booking record."""
     try:
         room_service_url = get_service_url('room-service')
+        booking_service_url = get_service_url('booking-service')
+        
         if not room_service_url:
             print('Room service URL not found for reservation confirm')
             return False
-        payload = {'payment_id': str(payment_id)}
+        
+        # Get payment info first to extract tenant_id
+        payment = payments_collection.find_one({'_id': payment_id})
+        tenant_id = payment.get('tenant_id') if payment else None
+        
+        payload = {
+            'payment_id': str(payment_id),
+            'tenant_id': tenant_id
+        }
         response = requests.put(
             f"{room_service_url}/internal/rooms/{room_id}/reservation/confirm",
             json=payload,
@@ -162,7 +172,36 @@ def confirm_room_reservation(room_id, payment_id):
         )
         if not response.ok:
             print(f"Failed to confirm room reservation: {response.text}")
-        return response.ok
+            return False
+        
+        # Now create booking record from payment
+        if booking_service_url:
+            try:
+                # Get payment info to extract booking details
+                payment = payments_collection.find_one({'_id': payment_id})
+                if payment:
+                    booking_payload = {
+                        'room_id': room_id,
+                        'user_id': payment.get('tenant_id'),
+                        'check_in_date': payment.get('check_in_date'),
+                        'deposit_amount': payment.get('amount', 0),
+                        'deposit_status': 'paid',
+                        'deposit_payment_id': payment_id,
+                        'payment_method': 'vnpay',
+                        'status': 'deposit_paid'
+                    }
+                    resp = requests.post(
+                        f"{booking_service_url}/internal/bookings/create-from-payment",
+                        json=booking_payload,
+                        headers={'X-Internal-Api-Key': INTERNAL_API_KEY, 'Content-Type': 'application/json'},
+                        timeout=5,
+                    )
+                    if not resp.ok:
+                        print(f"Failed to create booking record: {resp.text}")
+            except Exception as e:
+                print(f"Error creating booking record: {e}")
+        
+        return True
     except Exception as exc:
         print(f"Error confirming room reservation: {exc}")
         return False

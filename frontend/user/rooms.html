@@ -368,7 +368,106 @@
               --
             </div>
           </div>
+
+          <!-- Book Room Button in Detail Modal -->
+          <div class="pt-4 border-t border-gray-100">
+            <button
+              id="roomDetailBookBtn"
+              class="w-full px-4 py-3 bg-indigo-600 text-white rounded-xl font-semibold hover:bg-indigo-700 transition-colors"
+            >
+              Giữ phòng (thanh toán cọc)
+            </button>
+          </div>
         </div>
+      </div>
+    </div>
+
+    <!-- Booking Form Modal -->
+    <div
+      id="bookingFormModal"
+      class="hidden fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+    >
+      <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md">
+        <div class="p-6 border-b border-gray-100">
+          <div class="flex items-start justify-between gap-4">
+            <div>
+              <h3 class="text-xl font-bold text-gray-800">Thông tin đặt phòng</h3>
+              <p id="bookingRoomInfo" class="text-sm text-gray-500 mt-1">--</p>
+            </div>
+            <button
+              id="bookingFormClose"
+              class="p-2 hover:bg-gray-100 rounded-lg"
+              aria-label="Đóng"
+              type="button"
+            >
+              <svg class="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <form id="bookingForm" class="p-6 space-y-4">
+          <input type="hidden" id="bookingRoomId" />
+          <input type="hidden" id="bookingDepositAmount" />
+
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-2">Họ tên</label>
+            <input
+              type="text"
+              id="bookingUserName"
+              readonly
+              class="w-full px-4 py-3 border border-gray-200 rounded-xl bg-gray-50 text-gray-700"
+            />
+          </div>
+
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-2">Số điện thoại</label>
+            <input
+              type="text"
+              id="bookingUserPhone"
+              readonly
+              class="w-full px-4 py-3 border border-gray-200 rounded-xl bg-gray-50 text-gray-700"
+            />
+          </div>
+
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-2">Ngày check-in dự kiến *</label>
+            <input
+              type="date"
+              id="bookingCheckInDate"
+              required
+              class="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+            />
+            <p class="text-xs text-gray-500 mt-1">Bạn có thể chọn ngày hôm nay hoặc ngày trong tương lai.</p>
+          </div>
+
+          <div class="bg-indigo-50 rounded-xl p-4">
+            <div class="flex items-center justify-between">
+              <span class="text-sm text-gray-600">Tiền cọc cần thanh toán</span>
+              <span id="bookingDepositDisplay" class="text-lg font-bold text-indigo-600">0 VNĐ</span>
+            </div>
+          </div>
+
+          <div id="bookingFormError" class="hidden bg-red-50 text-red-600 px-4 py-3 rounded-xl text-sm"></div>
+
+          <div class="flex gap-3 pt-2">
+            <button
+              type="button"
+              id="bookingFormCancelBtn"
+              class="flex-1 py-3 border border-gray-300 rounded-xl font-semibold text-gray-700 hover:bg-gray-50 transition"
+            >
+              Hủy
+            </button>
+            <button
+              type="submit"
+              id="bookingFormSubmitBtn"
+              class="flex-1 py-3 bg-indigo-600 text-white rounded-xl font-semibold hover:bg-indigo-700 transition"
+            >
+              Thanh toán qua VNPay
+            </button>
+          </div>
+        </form>
       </div>
     </div>
 

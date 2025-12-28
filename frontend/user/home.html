@@ -330,6 +330,123 @@
     <!-- Footer placeholder - will be replaced by layout.js -->
     <div id="layout-footer"></div>
 
+    <!-- Booking Form Modal -->
+    <div
+      id="bookingModal"
+      class="hidden fixed inset-0 z-[60] flex items-center justify-center p-4"
+    >
+      <div
+        class="absolute inset-0 bg-black/70 backdrop-blur-sm"
+        onclick="closeBookingModal()"
+      ></div>
+      <div
+        class="relative w-full max-w-md bg-white rounded-2xl shadow-2xl overflow-hidden animate-in fade-in duration-200"
+      >
+        <button
+          onclick="closeBookingModal()"
+          class="absolute top-4 right-4 z-20 p-2 bg-gray-100 hover:bg-gray-200 rounded-full text-gray-600 transition"
+        >
+          <span class="material-symbols-outlined">close</span>
+        </button>
+
+        <div class="p-6">
+          <!-- Header -->
+          <div class="text-center mb-6">
+            <div class="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-4">
+              <span class="material-symbols-outlined text-3xl text-primary">home</span>
+            </div>
+            <h3 class="text-xl font-bold text-gray-900">Xác nhận đặt phòng</h3>
+            <p id="bookingRoomName" class="text-gray-500 mt-1">Tên phòng</p>
+          </div>
+
+          <!-- Room Info Summary -->
+          <div class="bg-gray-50 rounded-xl p-4 mb-4">
+            <div class="flex justify-between items-center mb-2">
+              <span class="text-gray-600 text-sm">Giá thuê hàng tháng</span>
+              <span id="bookingRoomPrice" class="font-bold text-gray-900">0đ</span>
+            </div>
+            <div class="flex justify-between items-center">
+              <span class="text-gray-600 text-sm">Tiền cọc giữ phòng</span>
+              <span id="bookingDepositAmount" class="font-bold text-primary">0đ</span>
+            </div>
+          </div>
+
+          <!-- Booking Form -->
+          <form id="bookingForm" class="space-y-4">
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">Họ và tên</label>
+              <input
+                type="text"
+                id="bookingFullName"
+                readonly
+                class="w-full px-4 py-3 bg-gray-100 border border-gray-200 rounded-lg text-gray-700 cursor-not-allowed"
+                placeholder="Đang tải..."
+              />
+            </div>
+
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">Số điện thoại</label>
+              <input
+                type="text"
+                id="bookingPhone"
+                readonly
+                class="w-full px-4 py-3 bg-gray-100 border border-gray-200 rounded-lg text-gray-700 cursor-not-allowed"
+                placeholder="Đang tải..."
+              />
+            </div>
+
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">
+                Ngày nhận phòng dự kiến <span class="text-red-500">*</span>
+              </label>
+              <input
+                type="date"
+                id="bookingCheckInDate"
+                required
+                class="w-full px-4 py-3 bg-white border border-gray-200 rounded-lg text-gray-900 focus:ring-2 focus:ring-primary focus:border-primary"
+              />
+              <p class="text-xs text-gray-500 mt-1">Bạn có thể chọn ngày hôm nay hoặc ngày trong tương lai</p>
+            </div>
+
+            <!-- Payment Method -->
+            <div class="bg-blue-50 border border-blue-100 rounded-xl p-4">
+              <div class="flex items-center gap-3">
+                <div class="w-12 h-12 bg-white rounded-lg flex items-center justify-center shadow-sm">
+                  <img src="https://sandbox.vnpayment.vn/paymentv2/images/icons/mics/128x128-color_vnpay-a.svg" alt="VNPay" class="w-8 h-8" />
+                </div>
+                <div class="flex-1">
+                  <p class="font-bold text-gray-900">Thanh toán qua VNPay</p>
+                  <p class="text-xs text-gray-500">Quét mã QR hoặc chuyển khoản ngân hàng</p>
+                </div>
+                <span class="material-symbols-outlined text-blue-600">check_circle</span>
+              </div>
+            </div>
+
+            <!-- Error Message -->
+            <div id="bookingFormError" class="hidden bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-xl text-sm"></div>
+
+            <!-- Action Buttons -->
+            <div class="flex gap-3 pt-2">
+              <button
+                type="button"
+                onclick="closeBookingModal()"
+                class="flex-1 py-3 px-4 rounded-lg border border-gray-200 hover:bg-gray-50 text-gray-700 font-semibold text-sm transition"
+              >
+                Hủy bỏ
+              </button>
+              <button
+                type="submit"
+                id="confirmBookingBtn"
+                class="flex-1 py-3 px-4 rounded-lg bg-primary hover:bg-primary-hover text-white font-bold text-sm shadow-glow transition active:scale-[0.98]"
+              >
+                <span id="confirmBookingBtnText">Thanh toán cọc</span>
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+
     <script src="/assets/js/common.js"></script>
     <script src="/assets/js/user/layout.js"></script>
     <script>
@@ -665,8 +782,8 @@
                         </div>
                         <div id="bookingError" class="hidden bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-xl text-sm mb-3"></div>
                         <div class="flex gap-3">
-                            <button id="bookBtn" onclick="handleBookRoom('${currentRoom._id}')" class="flex-1 py-3 px-4 rounded-lg bg-primary hover:bg-primary-hover text-white font-bold text-sm shadow-glow transition active:scale-[0.98]">
-                                <span id="bookBtnText">Đặt cọc ngay</span>
+                            <button id="bookBtn" onclick="openBookingModal('${currentRoom._id}')" class="flex-1 py-3 px-4 rounded-lg bg-primary hover:bg-primary-hover text-white font-bold text-sm shadow-glow transition active:scale-[0.98]">
+                                <span id="bookBtnText">Đặt phòng ngay</span>
                             </button>
                             <button class="px-5 py-3 rounded-lg border border-gray-200 hover:bg-gray-50 text-gray-700 font-semibold text-sm">Liên hệ</button>
                         </div>`;
@@ -710,62 +827,149 @@
         document.getElementById("roomModal").classList.add("hidden");
       }
 
-      async function handleBookRoom(roomId) {
-        const btn = document.getElementById("bookBtn");
-        const btnText = document.getElementById("bookBtnText");
-        const errorDiv = document.getElementById("bookingError");
-        if (btn) btn.disabled = true;
-        if (btnText) btnText.textContent = "Đang kiểm tra...";
-        if (errorDiv) errorDiv.classList.add("hidden");
+      // ============== Booking Modal Functions ==============
+      let bookingRoomId = null;
+      let cachedUserInfo = null;
+
+      async function openBookingModal(roomId) {
+        bookingRoomId = roomId;
+        const room = allRooms.find((r) => r._id === roomId);
+        if (!room) return;
+
+        // Set room info in modal
+        document.getElementById("bookingRoomName").textContent = room.name || "Phòng";
+        document.getElementById("bookingRoomPrice").textContent = formatCurrency(room.price);
+        document.getElementById("bookingDepositAmount").textContent = formatCurrency(room.deposit || 0);
+
+        // Set min date to today
+        const today = new Date().toISOString().split("T")[0];
+        const dateInput = document.getElementById("bookingCheckInDate");
+        dateInput.min = today;
+        dateInput.value = today;
+
+        // Load user info
+        document.getElementById("bookingFullName").value = "Đang tải...";
+        document.getElementById("bookingPhone").value = "Đang tải...";
+
         try {
           const userRes = await API.get("/users/me");
-          if (!userRes.ok) {
-            showBookingError("Không thể xác thực người dùng");
-            resetBookBtn();
-            return;
+          if (userRes.ok) {
+            cachedUserInfo = userRes.data;
+            document.getElementById("bookingFullName").value = cachedUserInfo.fullname || cachedUserInfo.name || cachedUserInfo.username || "";
+            document.getElementById("bookingPhone").value = cachedUserInfo.phone || "";
+          } else {
+            document.getElementById("bookingFullName").value = "Lỗi tải thông tin";
+            document.getElementById("bookingPhone").value = "Lỗi tải thông tin";
           }
-          const user = userRes.data;
-          const hasPhone = user.phone && user.phone.trim();
-          const hasCCCD = user.id_card && user.id_card.trim();
-          if (!hasPhone || !hasCCCD) {
-            const missing = [];
-            if (!hasPhone) missing.push("số điện thoại");
-            if (!hasCCCD) missing.push("CCCD/CMND");
-            showBookingError(
-              `Bạn cần cập nhật ${missing.join(" và ")} trước khi đặt phòng`
-            );
-            resetBookBtn();
-            if (confirm("Đến trang cập nhật thông tin cá nhân?"))
-              window.location.href = "/user/profile.html";
-            return;
+        } catch (e) {
+          console.error("Load user info error:", e);
+          document.getElementById("bookingFullName").value = "Lỗi kết nối";
+          document.getElementById("bookingPhone").value = "Lỗi kết nối";
+        }
+
+        // Reset form state
+        document.getElementById("bookingFormError").classList.add("hidden");
+        document.getElementById("confirmBookingBtn").disabled = false;
+        document.getElementById("confirmBookingBtnText").textContent = "Thanh toán cọc";
+
+        // Show modal
+        document.getElementById("bookingModal").classList.remove("hidden");
+      }
+
+      function closeBookingModal() {
+        document.getElementById("bookingModal").classList.add("hidden");
+        bookingRoomId = null;
+      }
+
+      // Form submission
+      document.addEventListener("DOMContentLoaded", () => {
+        const bookingForm = document.getElementById("bookingForm");
+        if (bookingForm) {
+          bookingForm.addEventListener("submit", handleBookingFormSubmit);
+        }
+      });
+
+      async function handleBookingFormSubmit(e) {
+        e.preventDefault();
+        const btn = document.getElementById("confirmBookingBtn");
+        const btnText = document.getElementById("confirmBookingBtnText");
+        const errorDiv = document.getElementById("bookingFormError");
+
+        // Validate
+        const checkInDate = document.getElementById("bookingCheckInDate").value;
+        if (!checkInDate) {
+          showBookingFormError("Vui lòng chọn ngày nhận phòng");
+          return;
+        }
+
+        // Check user info
+        if (!cachedUserInfo) {
+          showBookingFormError("Không thể xác thực người dùng. Vui lòng thử lại.");
+          return;
+        }
+
+        const hasPhone = cachedUserInfo.phone && cachedUserInfo.phone.trim();
+        const hasCCCD = cachedUserInfo.id_card && cachedUserInfo.id_card.trim();
+        if (!hasPhone || !hasCCCD) {
+          const missing = [];
+          if (!hasPhone) missing.push("số điện thoại");
+          if (!hasCCCD) missing.push("CCCD/CMND");
+          showBookingFormError(`Bạn cần cập nhật ${missing.join(" và ")} trước khi đặt phòng`);
+          if (confirm("Đến trang cập nhật thông tin cá nhân?")) {
+            window.location.href = "/user/profile.html";
           }
-          if (btnText) btnText.textContent = "Đang tạo đơn đặt phòng...";
-          const room = allRooms.find((r) => r._id === roomId);
-          if (!room || room.deposit <= 0) {
-            showBookingError("Phòng chưa được cấu hình tiền cọc");
-            resetBookBtn();
-            return;
-          }
-          if (btnText) btnText.textContent = "Đang chuyển đến VNPay...";
-          const paymentRes = await API.post(
-            "/payments/vnpay/room-deposit/create",
-            { room_id: roomId }
-          );
+          return;
+        }
+
+        // Check room deposit
+        const room = allRooms.find((r) => r._id === bookingRoomId);
+        if (!room || (room.deposit || 0) <= 0) {
+          showBookingFormError("Phòng chưa được cấu hình tiền cọc");
+          return;
+        }
+
+        // Start payment process
+        btn.disabled = true;
+        btnText.textContent = "Đang xử lý...";
+        errorDiv.classList.add("hidden");
+
+        try {
+          btnText.textContent = "Đang chuyển đến VNPay...";
+          const paymentRes = await API.post("/payments/vnpay/room-deposit/create", {
+            room_id: bookingRoomId,
+            check_in_date: checkInDate
+          });
+
           if (!paymentRes.ok || !paymentRes.data?.payment_url) {
-            showBookingError(
-              paymentRes.data?.message || "Không thể tạo link thanh toán"
-            );
-            resetBookBtn();
+            showBookingFormError(paymentRes.data?.message || "Không thể tạo link thanh toán");
+            resetBookingFormBtn();
             return;
           }
+
           window.location.href = paymentRes.data.payment_url;
         } catch (error) {
           console.error("Booking error:", error);
-          showBookingError("Lỗi kết nối server");
-          resetBookBtn();
+          showBookingFormError("Lỗi kết nối server");
+          resetBookingFormBtn();
         }
       }
 
+      function showBookingFormError(msg) {
+        const errorDiv = document.getElementById("bookingFormError");
+        if (errorDiv) {
+          errorDiv.textContent = msg;
+          errorDiv.classList.remove("hidden");
+        }
+      }
+
+      function resetBookingFormBtn() {
+        const btn = document.getElementById("confirmBookingBtn");
+        const btnText = document.getElementById("confirmBookingBtnText");
+        if (btn) btn.disabled = false;
+        if (btnText) btnText.textContent = "Thanh toán cọc";
+      }
+
+      // Keep old functions for backward compatibility
       function showBookingError(msg) {
         const errorDiv = document.getElementById("bookingError");
         if (errorDiv) {
@@ -777,7 +981,7 @@
         const btn = document.getElementById("bookBtn");
         const btnText = document.getElementById("bookBtnText");
         if (btn) btn.disabled = false;
-        if (btnText) btnText.textContent = "Đặt cọc ngay";
+        if (btnText) btnText.textContent = "Đặt phòng ngay";
       }
       function showError(msg) {
         document.getElementById(
