@@ -26,6 +26,21 @@ def get_service_url(service_name):
     return f"http://{service_name}:{ports.get(service_name, 5001)}"
 
 
+def _compute_next_month_due_date(year, month, day=15):
+    """Calculate due date as day X of the NEXT month.
+    
+    Example: Bill for Dec 2025 (month=12) → Due Jan 5, 2026
+    """
+    if month == 12:
+        next_year = year + 1
+        next_month = 1
+    else:
+        next_year = year
+        next_month = month + 1
+    
+    return f"{next_year}-{next_month:02d}-{day:02d}"
+
+
 def generate_monthly_bills():
     """Generate draft bills for all active contracts on day 1 of each month"""
     from model import bills_collection
@@ -140,7 +155,8 @@ def generate_monthly_bills():
                 'other_fee': 0,
                 'total': round(room_fee, 0),  # Initial = room rent only
                 'status': 'draft',  # Draft until admin updates meters
-                'due_date': f"{now.year}-{now.month:02d}-15",  # Due on 15th
+                # Due date is day 5 of NEXT month
+                'due_date': _compute_next_month_due_date(now.year, now.month, 5),
                 'paid_at': None,
                 'created_at': timestamp,
                 'auto_generated': True

@@ -773,6 +773,15 @@ def vnpay_ipn():
 
         if payment.get("payment_type") == "room_reservation_deposit" and payment.get("room_id"):
             confirm_room_reservation(payment["room_id"], payment_id)
+            # Send notification for successful deposit payment
+            if payment.get("tenant_id"):
+                send_notification(
+                    payment.get("tenant_id"),
+                    "Đặt cọc thành công",
+                    f"Bạn đã đặt cọc phòng thành công. Vui lòng vào 'Phòng của tôi' để xem chi tiết và xác nhận nhận phòng vào ngày check-in.",
+                    "payment",
+                    {"room_id": payment.get("room_id"), "payment_id": payment_id, "type": "room_deposit"},
+                )
 
         if payment.get("payment_type") == "bill_payment" and payment.get("bill_id"):
             bill_total = payment.get("bill_total") or payment.get("amount") or amount_received_vnd
@@ -900,8 +909,15 @@ def vnpay_return():
                                     )
                             if payment.get("payment_type") == "room_reservation_deposit" and payment.get("room_id"):
                                 confirm_room_reservation(payment["room_id"], txn_ref)
-                                # NOTE: Do NOT auto-create contract here
-                                # Contract is created when user clicks "Nhận phòng" on check-in date
+                                # Send notification for successful deposit payment
+                                if payment.get("tenant_id"):
+                                    send_notification(
+                                        payment.get("tenant_id"),
+                                        "Đặt cọc thành công",
+                                        f"Bạn đã đặt cọc phòng thành công. Vui lòng vào 'Phòng của tôi' để xác nhận nhận phòng.",
+                                        "payment",
+                                        {"room_id": payment.get("room_id"), "payment_id": txn_ref, "type": "room_deposit"},
+                                    )
                         else:
                             set_fields["status"] = "failed"
                             payments_collection.update_one({"_id": txn_ref}, {"$set": set_fields})

@@ -57,7 +57,7 @@ async function loadNotifications() {
     renderNotifications();
   } catch (error) {
     console.error("Error loading notifications:", error);
-    showToast("Không thể tải danh sách thông báo", "error");
+    displayToast("Không thể tải danh sách thông báo", "error");
   } finally {
     showLoading(false);
     isLoading = false;
@@ -254,12 +254,12 @@ async function sendNotification(event) {
 
   // Validation
   if (!title || !message) {
-    showToast("Vui lòng điền đầy đủ tiêu đề và nội dung", "error");
+    displayToast("Vui lòng điền đầy đủ tiêu đề và nội dung", "error");
     return;
   }
 
   if (targetType === "user" && !targetUser) {
-    showToast("Vui lòng chọn người dùng", "error");
+    displayToast("Vui lòng chọn người dùng", "error");
     return;
   }
 
@@ -292,12 +292,12 @@ async function sendNotification(event) {
       throw new Error(data.message || "Failed to send notification");
     }
 
-    showToast("Gửi thông báo thành công!", "success");
+    displayToast("Gửi thông báo thành công!", "success");
     closeSendModal();
     loadNotifications();
   } catch (error) {
     console.error("Error sending notification:", error);
-    showToast(error.message || "Không thể gửi thông báo", "error");
+    displayToast(error.message || "Không thể gửi thông báo", "error");
   } finally {
     showLoading(false);
   }
@@ -353,11 +353,53 @@ function getToken() {
   return localStorage.getItem("token") || "";
 }
 
-function showToast(message, type = "info") {
-  // Use common.js showToast if available
-  if (window.showToast && typeof window.showToast === "function") {
-    window.showToast(message, type);
-  } else {
-    alert(message);
-  }
+function displayToast(message, type = "info") {
+  // Remove existing toast if any
+  const existingToast = document.getElementById("customToast");
+  if (existingToast) existingToast.remove();
+  
+  // Create toast element
+  const toast = document.createElement("div");
+  toast.id = "customToast";
+  
+  // Colors based on type
+  const colors = {
+    success: "bg-green-500",
+    error: "bg-red-500",
+    warning: "bg-amber-500",
+    info: "bg-blue-500"
+  };
+  
+  const icons = {
+    success: "✓",
+    error: "✕",
+    warning: "⚠",
+    info: "ℹ"
+  };
+  
+  const bgColor = colors[type] || colors.info;
+  const icon = icons[type] || icons.info;
+  
+  toast.className = `fixed top-4 right-4 z-50 ${bgColor} text-white px-6 py-4 rounded-xl shadow-2xl flex items-center gap-3 animate-slide-in`;
+  toast.innerHTML = `
+    <span class="text-xl font-bold">${icon}</span>
+    <span class="font-medium">${message}</span>
+  `;
+  
+  // Add animation style
+  const style = document.createElement("style");
+  style.textContent = `
+    @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+    .animate-slide-in { animation: slideIn 0.3s ease-out; }
+  `;
+  document.head.appendChild(style);
+  
+  document.body.appendChild(toast);
+  
+  // Auto remove after 4 seconds
+  setTimeout(() => {
+    toast.style.transition = "opacity 0.3s";
+    toast.style.opacity = "0";
+    setTimeout(() => toast.remove(), 300);
+  }, 4000);
 }

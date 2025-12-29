@@ -63,11 +63,25 @@ def send_notification(user_id, title, message, notification_type, metadata=None)
 
 
 def compute_due_date(month_str, payment_day=5):
-    """Return ISO date string for due date"""
+    """Return ISO date string for due date (day X of NEXT month).
+    
+    Example: Bill for "2025-12" → Due "2026-01-05"
+    """
     try:
         base_date = datetime.datetime.strptime(month_str + "-01", "%Y-%m-%d")
-        last_day = calendar.monthrange(base_date.year, base_date.month)[1]
+        # Move to next month
+        if base_date.month == 12:
+            next_year = base_date.year + 1
+            next_month = 1
+        else:
+            next_year = base_date.year
+            next_month = base_date.month + 1
+        
+        # Ensure payment_day is valid for that month
+        last_day = calendar.monthrange(next_year, next_month)[1]
         target_day = min(max(1, int(payment_day)), last_day)
-        return base_date.replace(day=target_day).strftime("%Y-%m-%d")
+        
+        return f"{next_year}-{next_month:02d}-{target_day:02d}"
     except:
-        return month_str + "-05"
+        # Fallback: just add "-15" to month_str for next month
+        return month_str + "-15"

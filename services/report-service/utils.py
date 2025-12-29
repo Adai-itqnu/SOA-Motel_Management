@@ -105,16 +105,28 @@ def get_revenue_by_month(year):
     return list(bills_collection.aggregate(pipeline))
 
 
-def get_deposits_by_month(contracts, year):
-    """Calculate deposits by month from contracts"""
+def get_deposits_by_month(payments, year):
+    """Calculate deposits by month from completed payments"""
     deposits_by_month = {}
-    for contract in contracts:
+    for payment in payments:
         try:
-            created = datetime.datetime.fromisoformat(contract.get('created_at', ''))
+            # Only count completed room reservation deposits
+            if payment.get('status') != 'completed':
+                continue
+            if payment.get('payment_type') != 'room_reservation_deposit':
+                continue
+            
+            # Parse created_at timestamp
+            created_str = payment.get('created_at', payment.get('updated_at', ''))
+            if not created_str:
+                continue
+            
+            created = datetime.datetime.fromisoformat(created_str.replace('Z', '+00:00'))
             if created.year == int(year):
                 month = created.month
-                deposit = float(contract.get('deposit', 0))
-                deposits_by_month[month] = deposits_by_month.get(month, 0) + deposit
-        except:
+                amount = float(payment.get('amount', payment.get('amount_vnd', 0)))
+                deposits_by_month[month] = deposits_by_month.get(month, 0) + amount
+        except Exception as e:
+            print(f"Error processing payment for deposit: {e}")
             pass
     return deposits_by_month

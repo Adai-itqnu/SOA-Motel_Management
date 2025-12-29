@@ -14,7 +14,7 @@ def get_service_url(service_name):
     except:
         pass
     
-    ports = {'room-service': 5002, 'contract-service': 5006}
+    ports = {'room-service': 5002, 'contract-service': 5006, 'payment-service': 5007}
     return f"http://{service_name}:{ports.get(service_name, 5001)}"
 
 
@@ -62,3 +62,9 @@ def get_room_contracts(room_id, token):
 def get_room_detail(room_id, token):
     """Get room details"""
     return fetch_service_data('room-service', f"/api/rooms/{room_id}", token)
+
+
+def get_payments(token, status=None):
+    """Get payments list from payment-service"""
+    endpoint = f"/api/payments?status={status}" if status else "/api/payments"
+    return fetch_service_data('payment-service', endpoint, token)

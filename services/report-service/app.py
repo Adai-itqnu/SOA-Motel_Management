@@ -9,7 +9,7 @@ from model import bills_collection
 from decorators import token_required, admin_required
 from services import (
     get_room_stats, get_contracts, get_contract_detail,
-    get_room_contracts, get_room_detail
+    get_room_contracts, get_room_detail, get_payments
 )
 from utils import (
     get_timestamp, format_bill, calculate_bill_amounts,
@@ -170,10 +170,13 @@ def get_overview(current_user):
     bill_stats = get_bill_stats()
     revenue_bills = get_total_revenue()
     
-    # Calculate deposit revenue
+    # Calculate deposit revenue from completed payments
     deposit_revenue = 0
-    if all_contracts and all_contracts.get('contracts'):
-        deposit_revenue = sum(float(c.get('deposit', 0)) for c in all_contracts['contracts'])
+    payments_data = get_payments(token, 'completed')
+    if payments_data and payments_data.get('payments'):
+        for p in payments_data['payments']:
+            if p.get('payment_type') == 'room_reservation_deposit':
+                deposit_revenue += float(p.get('amount', 0))
     
     total_revenue = revenue_bills + deposit_revenue
     total_debt = get_total_debt()
@@ -199,8 +202,11 @@ def get_revenue(current_user):
     token = request.headers.get('Authorization')
     
     bills_by_month = get_revenue_by_month(year)
-    contracts_data = get_contracts(token)
-    deposits = get_deposits_by_month(contracts_data.get('contracts', []) if contracts_data else [], year)
+    
+    # Get payments for deposits calculation
+    payments_data = get_payments(token, 'completed')
+    payments_list = payments_data.get('payments', []) if payments_data else []
+    deposits = get_deposits_by_month(payments_list, year)
     
     monthly_data = []
     for month in range(1, 13):

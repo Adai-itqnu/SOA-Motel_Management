@@ -91,6 +91,34 @@ async function refreshContracts() {
   }
 
   contracts = res.data?.contracts || [];
+  
+  // Fetch user and room details for each contract
+  for (const contract of contracts) {
+    // Fetch user name
+    if (contract.user_id) {
+      try {
+        const userRes = await API.get(`/users/${contract.user_id}`);
+        if (userRes.ok && userRes.data) {
+          contract.user_name = userRes.data.fullname || userRes.data.username || contract.user_id;
+        }
+      } catch (e) {
+        contract.user_name = contract.user_id;
+      }
+    }
+    
+    // Fetch room code/name
+    if (contract.room_id) {
+      try {
+        const roomRes = await API.get(`/rooms/${contract.room_id}`);
+        if (roomRes.ok && roomRes.data) {
+          contract.room_code = roomRes.data.code || roomRes.data.name || contract.room_id;
+        }
+      } catch (e) {
+        contract.room_code = contract.room_id;
+      }
+    }
+  }
+  
   updateStats();
 
   if (!contracts.length) {
@@ -129,10 +157,10 @@ function renderTable() {
             c._id || ""
           )}</td>
           <td class="px-6 py-4 text-sm text-gray-700">${escapeHtml(
-            c.room_id || "--"
+            c.room_code || c.room_id || "--"
           )}</td>
           <td class="px-6 py-4 text-sm text-gray-700">${escapeHtml(
-            c.user_id || "--"
+            c.user_name || c.user_id || "--"
           )}</td>
           <td class="px-6 py-4 text-sm text-gray-700">${escapeHtml(range)}</td>
           <td class="px-6 py-4 text-sm font-semibold text-indigo-600">${formatMoney(
@@ -183,8 +211,8 @@ function openEditModal(contractId) {
   clearFormError();
 
   document.getElementById("editContractId").value = activeContract._id;
-  UI.setText("editRoomId", activeContract.room_id || "--");
-  UI.setText("editUserId", activeContract.user_id || "--");
+  UI.setText("editRoomId", activeContract.room_code || activeContract.room_id || "--");
+  UI.setText("editUserId", activeContract.user_name || activeContract.user_id || "--");
 
   document.getElementById("editMonthlyRent").value =
     activeContract.monthly_rent || 0;
