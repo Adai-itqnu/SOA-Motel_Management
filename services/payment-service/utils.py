@@ -99,7 +99,8 @@ def call_service_api(service_name, method, endpoint, data=None, token=None):
         return None
 
 def update_booking_deposit_status(booking_id, status, transaction_id=None, payment_id=None):
-    """Notify booking-service about deposit status changes."""
+# Notify booking-service about deposit status changes.
+    
     try:
         booking_service_url = get_service_url('booking-service')
         if not booking_service_url:
@@ -124,14 +125,15 @@ def update_booking_deposit_status(booking_id, status, transaction_id=None, payme
         return False
 
 
-def hold_room_reservation(room_id, tenant_id, payment_id):
-    """Hold a room during VNPay deposit payment."""
+def hold_room_reservation(room_id, user_id, payment_id):
+# Hold a room during VNPay deposit payment.
+    
     try:
         room_service_url = get_service_url('room-service')
         if not room_service_url:
             print('Room service URL not found for reservation hold')
             return False
-        payload = {'tenant_id': str(tenant_id), 'payment_id': str(payment_id)}
+        payload = {'user_id': str(user_id), 'payment_id': str(payment_id)}
         response = requests.put(
             f"{room_service_url}/internal/rooms/{room_id}/reservation/hold",
             json=payload,
@@ -147,7 +149,8 @@ def hold_room_reservation(room_id, tenant_id, payment_id):
 
 
 def confirm_room_reservation(room_id, payment_id):
-    """Confirm room reservation after payment success and create booking record."""
+# Confirm room reservation after payment success and create booking record.
+    
     try:
         room_service_url = get_service_url('room-service')
         booking_service_url = get_service_url('booking-service')
@@ -156,13 +159,13 @@ def confirm_room_reservation(room_id, payment_id):
             print('Room service URL not found for reservation confirm')
             return False
         
-        # Get payment info first to extract tenant_id
+        # Get payment info first to extract user_id
         payment = payments_collection.find_one({'_id': payment_id})
-        tenant_id = payment.get('tenant_id') if payment else None
+        user_id = payment.get('user_id') if payment else None
         
         payload = {
             'payment_id': str(payment_id),
-            'tenant_id': tenant_id
+            'user_id': user_id
         }
         response = requests.put(
             f"{room_service_url}/internal/rooms/{room_id}/reservation/confirm",
@@ -182,7 +185,7 @@ def confirm_room_reservation(room_id, payment_id):
                 if payment:
                     booking_payload = {
                         'room_id': room_id,
-                        'user_id': payment.get('tenant_id'),
+                        'user_id': payment.get('user_id'),
                         'check_in_date': payment.get('check_in_date'),
                         'deposit_amount': payment.get('amount', 0),
                         'deposit_status': 'paid',
@@ -208,7 +211,8 @@ def confirm_room_reservation(room_id, payment_id):
 
 
 def release_room_reservation(room_id, payment_id):
-    """Release a held room when payment cancelled/failed."""
+# Release a held room when payment cancelled/failed.
+    
     try:
         room_service_url = get_service_url('room-service')
         if not room_service_url:
@@ -277,8 +281,9 @@ def update_bill_status_if_paid(bill_id, total_amount):
     return False
 
 
-def auto_create_contract(room_id, tenant_id, payment_id, check_in_date=None):
-    """Auto-create contract after successful room deposit payment."""
+def auto_create_contract(room_id, user_id, payment_id, check_in_date=None):
+# Auto-create contract after successful room deposit payment.
+    
     try:
         contract_service_url = get_service_url('contract-service')
         if not contract_service_url:
@@ -287,7 +292,7 @@ def auto_create_contract(room_id, tenant_id, payment_id, check_in_date=None):
         
         payload = {
             'room_id': room_id,
-            'tenant_id': str(tenant_id),
+            'user_id': str(user_id),
             'payment_id': str(payment_id),
         }
         if check_in_date:
@@ -302,7 +307,7 @@ def auto_create_contract(room_id, tenant_id, payment_id, check_in_date=None):
         if not response.ok:
             print(f"Failed to auto-create contract: {response.text}")
             return False
-        print(f"Auto-created contract for room {room_id}, tenant {tenant_id}")
+        print(f"Auto-created contract for room {room_id}, user {user_id}")
         return True
     except Exception as exc:
         print(f"Error auto-creating contract: {exc}")

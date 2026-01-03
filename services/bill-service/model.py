@@ -1,4 +1,4 @@
-"""Bill Service Database Models"""
+# Bill Service Database Models
 from pymongo import MongoClient, ASCENDING, DESCENDING
 from config import Config
 
@@ -20,7 +20,7 @@ bills_collection = _database.bills
 
 def init_indexes():
     try:
-        bills_collection.create_index([('tenant_id', ASCENDING)])
+        bills_collection.create_index([('user_id', ASCENDING)])
         bills_collection.create_index([('room_id', ASCENDING)])
         bills_collection.create_index([('status', ASCENDING)])
         bills_collection.create_index([('created_at', DESCENDING)])

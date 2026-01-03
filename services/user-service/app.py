@@ -1,47 +1,24 @@
-"""
-User Service - Main Application
-CRUD operations for user management
-"""
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-import datetime
 import atexit
 
 from config import Config
 from model import users_collection
 from decorators import token_required, admin_required
 from service_registry import register_service, deregister_service
+from utils import (
+    get_timestamp,
+    get_user_id,
+    can_access_user,
+    format_user,
+    get_user_update_fields
+)
 
 
 app = Flask(__name__)
 app.config.from_object(Config)
 CORS(app)
 atexit.register(deregister_service)
-
-
-def get_timestamp():
-    return datetime.datetime.utcnow().isoformat()
-
-
-def format_user(user, include_sensitive=False):
-    """Format user for API response"""
-    response = {
-        '_id': user['_id'],
-        'username': user.get('username', ''),
-        'email': user.get('email', ''),
-        'phone': user.get('phone', ''),
-        'fullname': user.get('fullname', ''),
-        'role': user.get('role', 'user'),
-        'status': user.get('status', 'active'),
-        'created_at': user.get('created_at'),
-        'updated_at': user.get('updated_at')
-    }
-    
-    if include_sensitive:
-        response['id_card'] = user.get('id_card', '')
-        response['address'] = user.get('address', '')
-    
-    return response
 
 
 # ============== Health Check ==============
@@ -55,9 +32,9 @@ def health():
 
 @app.route('/api/users/me', methods=['GET'])
 @token_required
+# Get current logged-in user's profile
 def get_current_user(current_user):
-    """Get current logged-in user's profile"""
-    user_id = current_user.get('user_id') or current_user.get('_id')
+    user_id = get_user_id(current_user)
     user = users_collection.find_one({'_id': user_id})
     
     if not user:
@@ -68,14 +45,12 @@ def get_current_user(current_user):
 
 @app.route('/api/users/me', methods=['PUT'])
 @token_required
+# Update current user's profile
 def update_current_user(current_user):
-    """Update current user's profile"""
-    user_id = current_user.get('user_id') or current_user.get('_id')
+    user_id = get_user_id(current_user)
     data = request.get_json() or {}
     
-    # Allowed fields for user to update themselves
-    allowed = ['fullname', 'phone', 'id_card', 'address']
-    update_fields = {k: data[k] for k in allowed if k in data}
+    update_fields = get_user_update_fields(data, is_admin=False)
     
     if not update_fields:
         return jsonify({'message': 'Không có dữ liệu cập nhật!'}), 400
@@ -96,19 +71,16 @@ def update_current_user(current_user):
 @app.route('/api/users', methods=['GET'])
 @token_required
 @admin_required
+# Get all users with search and filter (admin only)
 def get_all_users(current_user):
-    """Get all users with search and filter (admin only)"""
     query = {}
     
-    # Filter by role
     if request.args.get('role'):
         query['role'] = request.args.get('role')
     
-    # Filter by status
     if request.args.get('status'):
         query['status'] = request.args.get('status')
     
-    # Search by keyword (fullname, email, phone, username)
     search = request.args.get('search', '').strip()
     if search:
         query['$or'] = [
@@ -119,7 +91,6 @@ def get_all_users(current_user):
             {'id_card': {'$regex': search, '$options': 'i'}}
         ]
     
-    # Pagination
     page = int(request.args.get('page', 1))
     limit = int(request.args.get('limit', 20))
     skip = (page - 1) * limit
@@ -138,18 +109,14 @@ def get_all_users(current_user):
 
 @app.route('/api/users/<user_id>', methods=['GET'])
 @token_required
+# Get user by ID
 def get_user(current_user, user_id):
-    """Get user by ID"""
     user = users_collection.find_one({'_id': user_id})
     
     if not user:
         return jsonify({'message': 'User không tồn tại!'}), 404
     
-    current_id = current_user.get('user_id') or current_user.get('_id')
-    role = current_user.get('role', '')
-    
-    # Only admin or the user themselves can see full info
-    include_sensitive = (role == 'admin' or current_id == user_id)
+    include_sensitive = can_access_user(current_user, user_id)
     
     return jsonify(format_user(user, include_sensitive=include_sensitive)), 200
 
@@ -157,18 +124,15 @@ def get_user(current_user, user_id):
 @app.route('/api/users/<user_id>', methods=['PUT'])
 @token_required
 @admin_required
+# Update user (admin only)
 def update_user(current_user, user_id):
-    """Update user (admin only)"""
     user = users_collection.find_one({'_id': user_id})
     
     if not user:
         return jsonify({'message': 'User không tồn tại!'}), 404
     
     data = request.get_json() or {}
-    
-    # Admin can update more fields
-    allowed = ['fullname', 'phone', 'email', 'id_card', 'address', 'role', 'status']
-    update_fields = {k: data[k] for k in allowed if k in data}
+    update_fields = get_user_update_fields(data, is_admin=True)
     
     if not update_fields:
         return jsonify({'message': 'Không có dữ liệu cập nhật!'}), 400
@@ -187,8 +151,8 @@ def update_user(current_user, user_id):
 @app.route('/api/users/<user_id>/status', methods=['PUT'])
 @token_required
 @admin_required
+# Activate/deactivate user (admin only)
 def update_user_status(current_user, user_id):
-    """Activate/deactivate user (admin only)"""
     user = users_collection.find_one({'_id': user_id})
     
     if not user:
@@ -211,14 +175,13 @@ def update_user_status(current_user, user_id):
 @app.route('/api/users/<user_id>', methods=['DELETE'])
 @token_required
 @admin_required
+# Delete user (admin only)
 def delete_user(current_user, user_id):
-    """Delete user (admin only)"""
     user = users_collection.find_one({'_id': user_id})
     
     if not user:
         return jsonify({'message': 'User không tồn tại!'}), 404
     
-    # Don't allow deleting admin
     if user.get('role') == 'admin':
         return jsonify({'message': 'Không thể xóa admin!'}), 400
     
@@ -230,9 +193,8 @@ def delete_user(current_user, user_id):
 # ============== Internal APIs ==============
 
 @app.route('/internal/users', methods=['GET'])
+# Get all users (internal API)
 def internal_get_all_users():
-    """Get all users (internal API for service-to-service communication)"""
-    # Verify internal API key
     api_key = request.headers.get('X-Internal-Key') or request.headers.get('X-Internal-Api-Key')
     if api_key != Config.INTERNAL_API_KEY:
         return jsonify({'message': 'Unauthorized'}), 401

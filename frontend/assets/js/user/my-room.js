@@ -726,7 +726,140 @@ function formatDate(dateStr) {
 }
 
 function reportIssue() {
-  alert("Chức năng báo cáo sự cố đang phát triển.");
+  if (!currentContract) {
+    alert("Bạn cần có phòng đang thuê để báo cáo sự cố.");
+    return;
+  }
+  
+  // Get room name from page title or contract
+  const pageTitle = document.getElementById("pageTitle");
+  const roomName = pageTitle ? pageTitle.textContent : (currentContract.room_code || "Phòng của tôi");
+  
+  // Display room info in modal
+  const reportRoomName = document.getElementById("reportRoomName");
+  if (reportRoomName) {
+    reportRoomName.textContent = roomName;
+  }
+  
+  // Reset form
+  document.getElementById("reportForm").reset();
+  document.getElementById("reportError").classList.add("hidden");
+  
+  // Show modal
+  document.getElementById("reportModal").classList.remove("hidden");
+}
+
+function closeReportModal() {
+  document.getElementById("reportModal").classList.add("hidden");
+}
+
+// Handle report form submission
+document.addEventListener("DOMContentLoaded", () => {
+  const reportForm = document.getElementById("reportForm");
+  if (reportForm) {
+    reportForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      await submitIncidentReport();
+    });
+  }
+});
+
+async function submitIncidentReport() {
+  const issueType = document.getElementById("reportIssueType").value;
+  const content = document.getElementById("reportContent").value.trim();
+  const submitBtn = document.getElementById("reportSubmitBtn");
+  const errorEl = document.getElementById("reportError");
+  
+  if (!issueType || !content) {
+    errorEl.textContent = "Vui lòng chọn loại sự cố và mô tả chi tiết.";
+    errorEl.classList.remove("hidden");
+    return;
+  }
+  
+  // Get user info
+  const user = Auth.getUser();
+  const userName = user?.fullname || user?.username || "Người dùng";
+  const userId = user?._id || user?.id;
+  
+  // Get room info
+  const roomName = document.getElementById("reportRoomName")?.textContent || "Không xác định";
+  const roomId = currentContract?.room_id || "";
+  
+  // Issue type labels
+  const issueLabels = {
+    electric: "Điện",
+    water: "Nước",
+    furniture: "Nội thất",
+    security: "An ninh",
+    noise: "Tiếng ồn",
+    other: "Khác"
+  };
+  
+  const issueLabel = issueLabels[issueType] || issueType;
+  
+  // Disable button
+  submitBtn.disabled = true;
+  submitBtn.innerHTML = '<span class="animate-spin">⏳</span> Đang gửi...';
+  errorEl.classList.add("hidden");
+  
+  try {
+    // Send report to notification service
+    const res = await API.post("/notifications/report-issue", {
+      issue_type: issueType,
+      issue_label: issueLabel,
+      content: content,
+      room_id: roomId,
+      room_name: roomName,
+      user_name: userName,
+      user_id: userId
+    });
+    
+    if (res.ok) {
+      closeReportModal();
+      // Show success toast
+      showToast("Đã gửi báo cáo sự cố thành công! Quản lý sẽ xem xét và phản hồi.", "success");
+    } else {
+      errorEl.textContent = res.data?.message || "Không thể gửi báo cáo. Vui lòng thử lại.";
+      errorEl.classList.remove("hidden");
+    }
+  } catch (error) {
+    console.error("Submit report error:", error);
+    errorEl.textContent = "Lỗi kết nối. Vui lòng thử lại sau.";
+    errorEl.classList.remove("hidden");
+  } finally {
+    submitBtn.disabled = false;
+    submitBtn.innerHTML = '<span class="material-symbols-outlined text-lg">send</span> Gửi báo cáo';
+  }
+}
+
+function showToast(message, type = "success") {
+  // Remove existing toast
+  const existingToast = document.getElementById("toast-notification");
+  if (existingToast) existingToast.remove();
+  
+  const bgColor = type === "success" ? "bg-green-500" : type === "error" ? "bg-red-500" : "bg-blue-500";
+  const icon = type === "success" ? "check_circle" : type === "error" ? "error" : "info";
+  
+  const toast = document.createElement("div");
+  toast.id = "toast-notification";
+  toast.className = `fixed top-4 right-4 z-[100] flex items-center gap-3 px-5 py-4 ${bgColor} text-white rounded-xl shadow-2xl transform translate-x-full transition-transform duration-300`;
+  toast.innerHTML = `
+    <span class="material-symbols-outlined">${icon}</span>
+    <p class="font-medium">${message}</p>
+  `;
+  
+  document.body.appendChild(toast);
+  
+  // Animate in
+  setTimeout(() => {
+    toast.classList.remove("translate-x-full");
+  }, 100);
+  
+  // Auto hide after 5s
+  setTimeout(() => {
+    toast.classList.add("translate-x-full");
+    setTimeout(() => toast.remove(), 300);
+  }, 5000);
 }
 
 function openPaymentModal() {
@@ -758,3 +891,4 @@ function logout() {
   Auth.logout();
   window.location.href = "/auth/login.html";
 }
+

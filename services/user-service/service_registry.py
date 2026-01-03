@@ -1,4 +1,4 @@
-"""User Service Registry"""
+# User Service Registry
 
 import os
 import time

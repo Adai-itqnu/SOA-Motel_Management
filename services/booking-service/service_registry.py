@@ -1,6 +1,4 @@
-"""
-Booking Service - Consul Service Registry
-"""
+# Booking Service - Consul Service Registry
 import os
 import time
 import consul

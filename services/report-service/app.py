@@ -1,4 +1,4 @@
-"""Report Service - Main Application"""
+# Report Service - Main Application
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import datetime
@@ -38,7 +38,8 @@ def health():
 @token_required
 @admin_required
 def create_bill(current_user):
-    """Create a new bill"""
+# Create a new bill
+    
     data = request.get_json() or {}
     
     required = ['contract_id', 'room_id', 'month', 'year', 'electric_old', 'electric_new', 'water_old', 'water_new']
@@ -61,7 +62,7 @@ def create_bill(current_user):
         '_id': f"B{bill_count + 1:05d}",
         'contract_id': data['contract_id'],
         'room_id': data['room_id'],
-        'tenant_id': data.get('tenant_id', ''),
+        'user_id': data.get('user_id', ''),
         'month': data['month'],
         'year': data['year'],
         'electric_old': data['electric_old'],
@@ -100,7 +101,8 @@ def create_bill(current_user):
 @token_required
 @admin_required
 def pay_bill(current_user, bill_id):
-    """Process bill payment"""
+# Process bill payment
+    
     data = request.get_json() or {}
     
     if 'amount' not in data:
@@ -138,7 +140,8 @@ def pay_bill(current_user, bill_id):
 @token_required
 @admin_required
 def get_bills(current_user):
-    """Get list of bills"""
+# Get list of bills
+    
     query = {}
     for param in ['status', 'room_id']:
         if request.args.get(param):
@@ -160,7 +163,8 @@ def get_bills(current_user):
 @token_required
 @admin_required
 def get_overview(current_user):
-    """Get overview report"""
+# Get overview report
+    
     token = request.headers.get('Authorization')
     
     rooms = get_room_stats(token) or {'total': 0, 'available': 0, 'occupied': 0, 'occupancy_rate': 0}
@@ -197,7 +201,8 @@ def get_overview(current_user):
 @token_required
 @admin_required
 def get_revenue(current_user):
-    """Get monthly revenue report"""
+# Get monthly revenue report
+    
     year = request.args.get('year', datetime.datetime.now().year)
     token = request.headers.get('Authorization')
     
@@ -233,7 +238,8 @@ def get_revenue(current_user):
 @token_required
 @admin_required
 def get_debt(current_user):
-    """Get debt report"""
+# Get debt report
+    
     token = request.headers.get('Authorization')
     
     debt_bills = list(bills_collection.find({
@@ -246,12 +252,12 @@ def get_debt(current_user):
     for bill in debt_bills:
         format_bill(bill)
         
-        # Get tenant info from contract
+        # Get user info from contract
         if bill.get('contract_id'):
             contract = get_contract_detail(bill['contract_id'], token)
             if contract:
-                bill['tenant_name'] = contract.get('tenant_info', {}).get('name', '')
-                bill['tenant_phone'] = contract.get('tenant_info', {}).get('phone', '')
+                bill['user_name'] = contract.get('user_info', {}).get('name', '')
+                bill['user_phone'] = contract.get('user_info', {}).get('phone', '')
         
         # Calculate overdue days
         if bill.get('due_date'):
@@ -276,7 +282,8 @@ def get_debt(current_user):
 @token_required
 @admin_required
 def get_room_report(current_user, room_id):
-    """Get room-specific report"""
+# Get room-specific report
+    
     token = request.headers.get('Authorization')
     
     room = get_room_detail(room_id, token)
@@ -302,7 +309,8 @@ def get_room_report(current_user, room_id):
 @token_required
 @admin_required
 def export_report(current_user):
-    """Export report (placeholder)"""
+# Export report (placeholder)
+    
     return jsonify({
         'message': 'Tính năng xuất Excel đang được phát triển',
         'report_type': request.args.get('type', 'overview')

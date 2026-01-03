@@ -161,15 +161,6 @@
               >
               Báo cáo sự cố
             </button>
-            <button
-              onclick="window.location.href='/user/bills.html'"
-              class="flex items-center gap-2 px-4 py-2 bg-primary hover:bg-red-700 text-white rounded-lg text-sm font-bold shadow-lg shadow-primary/30 transition-all"
-            >
-              <span class="material-symbols-outlined text-[18px]"
-                >payments</span
-              >
-              Thanh toán ngay
-            </button>
           </div>
         </div>
 
@@ -358,15 +349,6 @@
                   </div>
                 </div>
               </div>
-              <button
-                onclick="downloadContract()"
-                class="w-full mt-6 flex items-center justify-center gap-2 px-4 py-2 bg-gray-50 hover:bg-gray-100 text-gray-900 rounded-lg text-sm font-bold transition-colors"
-              >
-                <span class="material-symbols-outlined text-[18px]"
-                  >download</span
-                >
-                Tải hợp đồng PDF
-              </button>
             </div>
 
             <!-- Landlord Contact Card -->
@@ -393,15 +375,6 @@
                     >call</span
                   >
                   Gọi điện
-                </button>
-                <button
-                  onclick="messageLandlord()"
-                  class="flex items-center justify-center gap-2 px-3 py-2 bg-gray-50 hover:bg-gray-100 text-gray-900 rounded-lg text-sm font-bold transition-colors"
-                >
-                  <span class="material-symbols-outlined text-[18px]"
-                    >chat</span
-                  >
-                  Nhắn tin
                 </button>
               </div>
             </div>
@@ -441,6 +414,71 @@
         </div>
       </div>
     </main>
+
+    <!-- Incident Report Modal -->
+    <div id="reportModal" class="hidden fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto">
+        <div class="p-6 border-b border-gray-100">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-3">
+              <div class="w-10 h-10 bg-amber-100 rounded-xl flex items-center justify-center">
+                <span class="material-symbols-outlined text-amber-600">report_problem</span>
+              </div>
+              <h3 class="text-xl font-bold text-gray-800">Báo cáo sự cố</h3>
+            </div>
+            <button onclick="closeReportModal()" class="p-2 hover:bg-gray-100 rounded-full transition">
+              <span class="material-symbols-outlined text-gray-500">close</span>
+            </button>
+          </div>
+        </div>
+        
+        <form id="reportForm" class="p-6 space-y-4">
+          <!-- Room Info Display -->
+          <div class="bg-gray-50 rounded-xl p-4">
+            <p class="text-sm text-gray-500 mb-1">Phòng đang thuê</p>
+            <p id="reportRoomName" class="font-bold text-gray-900">--</p>
+          </div>
+          
+          <!-- Issue Type -->
+          <div>
+            <label class="text-sm font-medium text-gray-700 block mb-2">Loại sự cố</label>
+            <select id="reportIssueType" required
+              class="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary focus:border-transparent transition">
+              <option value="">-- Chọn loại sự cố --</option>
+              <option value="electric">🔌 Điện (mất điện, chập điện...)</option>
+              <option value="water">💧 Nước (rò rỉ, tắc nghẽn...)</option>
+              <option value="furniture">🪑 Nội thất hư hỏng</option>
+              <option value="security">🔒 An ninh</option>
+              <option value="noise">🔊 Tiếng ồn</option>
+              <option value="other">📋 Khác</option>
+            </select>
+          </div>
+          
+          <!-- Issue Description -->
+          <div>
+            <label class="text-sm font-medium text-gray-700 block mb-2">Mô tả chi tiết</label>
+            <textarea id="reportContent" required rows="4" placeholder="Mô tả sự cố bạn gặp phải..."
+              class="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary focus:border-transparent transition resize-none"></textarea>
+          </div>
+          
+          <!-- Error Message -->
+          <div id="reportError" class="hidden p-3 bg-red-50 border border-red-200 rounded-xl text-red-600 text-sm"></div>
+          
+          <!-- Buttons -->
+          <div class="flex gap-3 pt-2">
+            <button type="button" onclick="closeReportModal()"
+              class="flex-1 px-4 py-3 border border-gray-300 text-gray-700 rounded-xl hover:bg-gray-50 transition font-medium">
+              Hủy
+            </button>
+            <button type="submit" id="reportSubmitBtn"
+              class="flex-1 px-4 py-3 bg-primary text-white rounded-xl hover:bg-red-700 transition font-medium flex items-center justify-center gap-2">
+              <span class="material-symbols-outlined text-lg">send</span>
+              Gửi báo cáo
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
 
     <!-- Footer placeholder - will be replaced by layout.js -->
     <div id="layout-footer"></div>

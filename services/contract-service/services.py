@@ -1,4 +1,4 @@
-"""Contract Service - External Service Calls"""
+# Contract Service - External Service Calls
 import requests
 from config import Config
 
@@ -9,7 +9,7 @@ def get_service_url(service_name):
         if response.ok and response.json():
             svc = response.json()[0]
             return f"http://{svc['ServiceAddress']}:{svc['ServicePort']}"
-        ports = {'room-service': 5002, 'tenant-service': 5003}
+        ports = {'room-service': 5002, 'user-service': 5003}
         return f"http://{service_name}:{ports.get(service_name, 5001)}"
     except:
         return None
@@ -31,25 +31,25 @@ def check_room(room_id, token):
     except Exception as e:
         return None, str(e)
 
-def update_room_status(room_id, status, tenant_id, token):
+def update_room_status(room_id, status, user_id, token):
     try:
         url = get_service_url('room-service')
         if not url:
             return False
         data = {'status': status}
-        if tenant_id:
-            data['tenant_id'] = str(tenant_id)
+        if user_id:
+            data['user_id'] = str(user_id)
         resp = requests.put(f"{url}/api/rooms/{room_id}", json=data, headers=_auth_header(token), timeout=5)
         return resp.ok
     except:
         return False
 
-def get_tenant_info(tenant_id, token):
+def get_user_info(user_id, token):
     try:
-        url = get_service_url('tenant-service')
+        url = get_service_url('user-service')
         if not url:
             return None
-        resp = requests.get(f"{url}/api/tenants/{tenant_id}", headers=_auth_header(token), timeout=5)
+        resp = requests.get(f"{url}/api/users/{user_id}", headers=_auth_header(token), timeout=5)
         return resp.json() if resp.ok else None
     except:
         return None

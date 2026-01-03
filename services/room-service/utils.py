@@ -1,27 +1,25 @@
-"""
-Room Service - Utility Functions
-"""
+# Room Service - Utility Functions
 import datetime
 import uuid
 from config import Config
 from model import rooms_collection
 
 
+# Generate unique room ID
 def generate_room_id():
-    """Generate unique room ID"""
     while True:
         room_id = f"ROOM{uuid.uuid4().hex[:8].upper()}"
         if not rooms_collection.find_one({'_id': room_id}):
             return room_id
 
 
+# Get current UTC timestamp in ISO format
 def get_timestamp():
-    """Get current UTC timestamp in ISO format"""
     return datetime.datetime.utcnow().isoformat()
 
 
+# Format room data for API response
 def format_room_response(room, include_sensitive=True):
-    """Format room data for API response"""
     raw_images = room.get('images') or []
     if not isinstance(raw_images, list):
         raw_images = []
@@ -58,7 +56,7 @@ def format_room_response(room, include_sensitive=True):
         'images': images,
         'status': room.get('status', Config.STATUS_AVAILABLE),
         'current_contract_id': room.get('current_contract_id'),
-        'reserved_by_tenant_id': room.get('reserved_by_tenant_id'),
+        'reserved_by_user_id': room.get('reserved_by_user_id'),
         'reserved_payment_id': room.get('reserved_payment_id'),
         'reservation_status': room.get('reservation_status'),
         'reserved_at': room.get('reserved_at'),
@@ -70,7 +68,7 @@ def format_room_response(room, include_sensitive=True):
         data.pop('electricity_price', None)
         data.pop('water_price', None)
         data.pop('current_contract_id', None)
-        data.pop('reserved_by_tenant_id', None)
+        data.pop('reserved_by_user_id', None)
         data.pop('reserved_payment_id', None)
         data.pop('reservation_status', None)
         data.pop('reserved_at', None)
@@ -80,8 +78,8 @@ def format_room_response(room, include_sensitive=True):
     return data
 
 
+# Check if room name already exists
 def check_duplicate_room_name(name, exclude_room_id=None):
-    """Check if room name already exists"""
     query = {'name': name}
     if exclude_room_id:
         query['_id'] = {'$ne': exclude_room_id}

@@ -1,6 +1,4 @@
-"""
-Booking Service Configuration
-"""
+# Booking Service Configuration
 import os
 
 

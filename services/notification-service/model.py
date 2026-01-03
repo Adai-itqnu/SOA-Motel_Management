@@ -1,4 +1,4 @@
-"""Notification Service Database Models"""
+# Notification Service Database Models
 from pymongo import MongoClient, ASCENDING, DESCENDING
 from config import Config
 

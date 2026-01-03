@@ -11,6 +11,8 @@ http {
         least_conn;
         {{range service "auth-service"}}
         server {{.Address}}:{{.Port}};
+        {{else}}
+        server auth-service:5001;
         {{end}}
     }
 
@@ -19,6 +21,8 @@ http {
         least_conn;
         {{range service "room-service"}}
         server {{.Address}}:{{.Port}};
+        {{else}}
+        server room-service:5002;
         {{end}}
     }
 
@@ -27,6 +31,8 @@ http {
         least_conn;
         {{range service "user-service"}}
         server {{.Address}}:{{.Port}};
+        {{else}}
+        server user-service:5003;
         {{end}}
     }
 
@@ -35,6 +41,8 @@ http {
         least_conn;
         {{range service "booking-service"}}
         server {{.Address}}:{{.Port}};
+        {{else}}
+        server booking-service:5005;
         {{end}}
     }
 
@@ -43,6 +51,8 @@ http {
         least_conn;
         {{range service "payment-service"}}
         server {{.Address}}:{{.Port}};
+        {{else}}
+        server payment-service:5008;
         {{end}}
     }
 
@@ -51,6 +61,8 @@ http {
         least_conn;
         {{range service "contract-service"}}
         server {{.Address}}:{{.Port}};
+        {{else}}
+        server contract-service:5006;
         {{end}}
     }
 
@@ -59,6 +71,8 @@ http {
         least_conn;
         {{range service "bill-service"}}
         server {{.Address}}:{{.Port}};
+        {{else}}
+        server bill-service:5007;
         {{end}}
     }
 
@@ -67,6 +81,8 @@ http {
         least_conn;
         {{range service "notification-service"}}
         server {{.Address}}:{{.Port}};
+        {{else}}
+        server notification-service:5010;
         {{end}}
     }
 
@@ -75,6 +91,8 @@ http {
         least_conn;
         {{range service "report-service"}}
         server {{.Address}}:{{.Port}};
+        {{else}}
+        server report-service:5009;
         {{end}}
     }
 
@@ -83,24 +101,10 @@ http {
         server frontend:3000;
     }
 
+
     server {
         listen 80;
         server_name _;
-
-        # Catch-all for unknown API routes.
-        # Prevents an infinite proxy loop for /api/* paths that are not explicitly routed below.
-        location ^~ /api/ {
-            default_type application/json;
-            add_header 'Access-Control-Allow-Origin' '*' always;
-            add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, DELETE, OPTIONS' always;
-            add_header 'Access-Control-Allow-Headers' 'Authorization, Content-Type' always;
-
-            if ($request_method = 'OPTIONS') {
-                return 204;
-            }
-
-            return 404 '{"error":"Not Found","message":"API route not configured"}';
-        }
 
         # Frontend - proxy to frontend container
         location / {

@@ -1,20 +1,23 @@
-"""
-Auth Service - Main Application
-Handles authentication: login, register, JWT, password hashing
-"""
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from werkzeug.security import generate_password_hash, check_password_hash
 import jwt
 import datetime
-import uuid
-import re
 import atexit
 import requests
 
 from config import Config
 from model import users_collection
 from service_registry import register_service, deregister_service
+from utils import (
+    generate_user_id,
+    validate_email,
+    validate_phone,
+    get_timestamp,
+    format_user_response,
+    check_duplicate_field
+)
+from decorators import token_required
 
 
 app = Flask(__name__)
@@ -23,30 +26,10 @@ CORS(app)
 atexit.register(deregister_service)
 
 
-# ============== Utility Functions ==============
+# ============== Helper Functions ==============
 
-def get_timestamp():
-    return datetime.datetime.utcnow().isoformat()
-
-
-def generate_user_id():
-    return f"USR{uuid.uuid4().hex[:8].upper()}"
-
-
-def validate_email(email):
-    pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
-    return bool(re.match(pattern, email))
-
-
-def validate_phone(phone):
-    if not phone:
-        return True
-    pattern = r'^(0|\+84)[0-9]{9,10}$'
-    return bool(re.match(pattern, phone))
-
-
+# Send welcome notification to new user via notification-service
 def send_welcome_notification(user_id, fullname):
-    """Send welcome notification to new user via notification-service"""
     try:
         response = requests.post(
             f"{Config.NOTIFICATION_SERVICE_URL}/api/notifications/welcome",
@@ -65,17 +48,6 @@ def send_welcome_notification(user_id, fullname):
         return False
 
 
-def format_user_response(user):
-    return {
-        'id': user['_id'],
-        'username': user.get('username', ''),
-        'email': user.get('email', ''),
-        'phone': user.get('phone', ''),
-        'fullname': user.get('fullname', ''),
-        'role': user.get('role', 'user'),
-        'status': user.get('status', 'active')
-    }
-
 
 # ============== Health Check ==============
 
@@ -87,8 +59,8 @@ def health():
 # ============== Authentication APIs ==============
 
 @app.route('/api/auth/register', methods=['POST'])
+# Register a new user account
 def register():
-    """Register a new user account"""
     data = request.get_json() or {}
     
     # Validate required fields
@@ -109,11 +81,11 @@ def register():
     if len(data['password']) < 6:
         return jsonify({'message': 'Mật khẩu phải có ít nhất 6 ký tự!'}), 400
     
-    # Check duplicates
-    if users_collection.find_one({'username': data['username']}):
+    # Check duplicates using utility function
+    if check_duplicate_field('username', data['username']):
         return jsonify({'message': 'Tên đăng nhập đã tồn tại!'}), 400
     
-    if users_collection.find_one({'email': data['email']}):
+    if check_duplicate_field('email', data['email']):
         return jsonify({'message': 'Email đã được sử dụng!'}), 400
     
     # First user becomes admin
@@ -153,8 +125,8 @@ def register():
 
 
 @app.route('/api/auth/login', methods=['POST'])
+# Login with username or email
 def login():
-    """Login with username or email"""
     data = request.get_json() or {}
     
     login_id = data.get('username') or data.get('email')
@@ -196,8 +168,8 @@ def login():
 
 
 @app.route('/api/auth/verify', methods=['GET'])
+# Verify JWT token
 def verify():
-    """Verify JWT token"""
     auth_header = request.headers.get('Authorization') or request.headers.get('authorization')
     
     if not auth_header:
@@ -227,21 +199,9 @@ def verify():
 
 
 @app.route('/api/auth/change-password', methods=['PUT'])
-def change_password():
-    """Change password (requires valid token)"""
-    auth_header = request.headers.get('Authorization') or request.headers.get('authorization')
-    
-    if not auth_header:
-        return jsonify({'message': 'Không có token!'}), 401
-    
-    try:
-        parts = auth_header.split()
-        token = parts[1] if len(parts) == 2 else parts[0]
-        data = jwt.decode(token, Config.JWT_SECRET, algorithms=['HS256'])
-        user_id = data.get('user_id')
-    except:
-        return jsonify({'message': 'Token không hợp lệ!'}), 401
-    
+@token_required
+# Change password (requires valid token)
+def change_password(current_user):
     body = request.get_json() or {}
     old_password = body.get('old_password')
     new_password = body.get('new_password')
@@ -252,15 +212,11 @@ def change_password():
     if len(new_password) < 6:
         return jsonify({'message': 'Mật khẩu mới phải có ít nhất 6 ký tự!'}), 400
     
-    user = users_collection.find_one({'_id': user_id})
-    if not user:
-        return jsonify({'message': 'User không tồn tại!'}), 404
-    
-    if not check_password_hash(user['password'], old_password):
+    if not check_password_hash(current_user['password'], old_password):
         return jsonify({'message': 'Mật khẩu cũ không đúng!'}), 401
     
     users_collection.update_one(
-        {'_id': user_id},
+        {'_id': current_user['_id']},
         {'$set': {
             'password': generate_password_hash(new_password),
             'updated_at': get_timestamp()

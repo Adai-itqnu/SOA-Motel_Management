@@ -1,14 +1,12 @@
-"""
-Auth Service Database Models
-MongoDB connection and collection management
-"""
+# Auth Service Database Models
+# MongoDB connection and collection management
 from pymongo import MongoClient, ASCENDING
 from pymongo.errors import CollectionInvalid
 from config import Config
 
 
+# Database connection singleton
 class Database:
-    """Database connection singleton"""
     
     _instance = None
     _client = None
@@ -41,8 +39,8 @@ _database = Database()
 users_collection = _database.users
 
 # Create indexes
+# Initialize database indexes
 def init_indexes():
-    """Initialize database indexes"""
     try:
         users_collection.create_index([('username', ASCENDING)], unique=True)
         users_collection.create_index([('email', ASCENDING)], unique=True)
@@ -57,16 +55,16 @@ init_indexes()
 
 
 # Utility functions
+# Get users collection
 def get_users_collection():
-    """Get users collection"""
     return users_collection
 
 
+# Get database instance
 def get_db():
-    """Get database instance"""
     return _database.db
 
 
+# Get MongoDB client
 def get_client():
-    """Get MongoDB client"""
     return _database.client

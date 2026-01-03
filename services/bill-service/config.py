@@ -1,4 +1,4 @@
-"""Bill Service Configuration"""
+# Bill Service Configuration
 import os
 
 class Config:

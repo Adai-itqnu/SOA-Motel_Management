@@ -1,4 +1,4 @@
-"""Bill Service - Scheduler for automatic bill generation"""
+# Bill Service - Scheduler for automatic bill generation
 import datetime
 import requests
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -7,7 +7,8 @@ from config import Config, INTERNAL_API_KEY, CONSUL_HOST, CONSUL_PORT
 
 
 def get_service_url(service_name):
-    """Get service URL from Consul or fallback"""
+# Get service URL from Consul or fallback
+    
     try:
         consul_url = f"http://{CONSUL_HOST}:{CONSUL_PORT}/v1/catalog/service/{service_name}"
         response = requests.get(consul_url, timeout=5)
@@ -27,10 +28,9 @@ def get_service_url(service_name):
 
 
 def _compute_next_month_due_date(year, month, day=15):
-    """Calculate due date as day X of the NEXT month.
-    
-    Example: Bill for Dec 2025 (month=12) → Due Jan 5, 2026
-    """
+    # Calculate due date as day X of the NEXT month.
+    # Example: Bill for Dec 2025 (month=12) -> Due Jan 5, 2026
+
     if month == 12:
         next_year = year + 1
         next_month = 1
@@ -42,7 +42,8 @@ def _compute_next_month_due_date(year, month, day=15):
 
 
 def generate_monthly_bills():
-    """Generate draft bills for all active contracts on day 1 of each month"""
+# Generate draft bills for all active contracts on day 1 of each month
+    
     from model import bills_collection
     
     now = datetime.datetime.utcnow()
@@ -173,7 +174,8 @@ def generate_monthly_bills():
 
 
 def start_scheduler():
-    """Start the background scheduler"""
+# Start the background scheduler
+    
     scheduler = BackgroundScheduler()
     
     # Run on day 1 of each month at 00:05 UTC
@@ -193,5 +195,6 @@ def start_scheduler():
 
 # Manual trigger endpoint helper
 def trigger_bill_generation():
-    """Manually trigger bill generation (for testing/admin use)"""
+# Manually trigger bill generation (for testing/admin use)
+    
     generate_monthly_bills()

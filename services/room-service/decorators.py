@@ -1,14 +1,12 @@
-"""
-Room Service - Authentication Decorators
-"""
+# Room Service - Authentication Decorators
 from functools import wraps
 from flask import request, jsonify
 import jwt
 from config import Config
 
 
+# Extract JWT token from request headers
 def get_token_from_request():
-    """Extract JWT token from request headers"""
     token = request.headers.get('Authorization') or request.headers.get('authorization')
     
     if not token:
@@ -20,8 +18,8 @@ def get_token_from_request():
     return token
 
 
+# Decode and validate JWT token
 def decode_token(token):
-    """Decode and validate JWT token"""
     try:
         payload = jwt.decode(token, Config.JWT_SECRET, algorithms=['HS256'])
         return payload, None
@@ -31,8 +29,8 @@ def decode_token(token):
         return None, ('Token không hợp lệ!', 401)
 
 
+# Decorator to require valid JWT token
 def token_required(f):
-    """Decorator to require valid JWT token"""
     @wraps(f)
     def decorated(*args, **kwargs):
         token = get_token_from_request()
@@ -50,8 +48,8 @@ def token_required(f):
     return decorated
 
 
+# Decorator to require admin role
 def admin_required(f):
-    """Decorator to require admin role"""
     @wraps(f)
     def decorated(current_user, *args, **kwargs):
         if current_user.get('role') != 'admin':
@@ -60,8 +58,8 @@ def admin_required(f):
     return decorated
 
 
+# Decorator to require internal API key for service-to-service calls
 def internal_api_required(f):
-    """Decorator to require internal API key for service-to-service calls"""
     @wraps(f)
     def decorated(*args, **kwargs):
         api_key = request.headers.get('X-Internal-Api-Key')

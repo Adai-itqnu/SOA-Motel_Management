@@ -1,12 +1,10 @@
-"""
-Room Service Database Models
-"""
+# Room Service Database Models
 from pymongo import MongoClient, ASCENDING
 from config import Config
 
 
+# Database connection singleton
 class Database:
-    """Database connection singleton"""
     
     _instance = None
     _client = None
@@ -37,12 +35,12 @@ _database = Database()
 rooms_collection = _database.rooms
 
 
+# Initialize database indexes
 def init_indexes():
-    """Initialize database indexes"""
     try:
         rooms_collection.create_index([('name', ASCENDING)], unique=True)
         rooms_collection.create_index([('status', ASCENDING)])
-        rooms_collection.create_index([('tenant_id', ASCENDING)], sparse=True)
+        rooms_collection.create_index([('user_id', ASCENDING)], sparse=True)
         print("[DB] ✓ Room indexes created")
     except Exception as e:
         print(f"[DB] Index creation: {e}")

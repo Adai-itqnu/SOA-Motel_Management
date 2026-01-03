@@ -1,4 +1,4 @@
-"""Notification Service - Utility Functions"""
+# Notification Service - Utility Functions
 import datetime
 import uuid
 from model import notifications_collection
@@ -9,12 +9,14 @@ def get_timestamp():
 
 
 def generate_notification_id():
-    """Generate unique notification ID"""
+# Generate unique notification ID
+    
     return f"N{uuid.uuid4().hex[:10]}"
 
 
 def create_notification_document(data):
-    """Create a notification document and save to DB"""
+# Create a notification document and save to DB
+    
     notification = {
         '_id': data.get('_id') or generate_notification_id(),
         'user_id': str(data['user_id']),
@@ -32,18 +34,21 @@ def create_notification_document(data):
 
 
 def format_notification(notification):
-    """Format notification for API response"""
+# Format notification for API response
+    
     notification['id'] = notification['_id']
     return notification
 
 
 def get_user_id(current_user):
-    """Get user ID from token payload"""
+# Get user ID from token payload
+    
     return str(current_user.get('user_id') or current_user.get('id'))
 
 
 def check_duplicate_notification(notification_type, bill_id):
-    """Check if notification already exists"""
+# Check if notification already exists
+    
     return notifications_collection.find_one({
         'type': notification_type,
         'metadata.bill_id': bill_id

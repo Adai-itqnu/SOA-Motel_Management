@@ -1,4 +1,4 @@
-"""Bill Service - Consul Registry"""
+# Bill Service - Consul Registry
 import socket
 import os
 import time
@@ -7,7 +7,8 @@ from config import Config
 
 
 class ServiceRegistry:
-    """Consul service registry handler"""
+# Consul service registry handler
+    
     
     def __init__(self):
         self.consul_client = None
@@ -95,10 +96,12 @@ _registry = ServiceRegistry()
 
 
 def register_service():
-    """Register service with Consul"""
+# Register service with Consul
+    
     return _registry.register()
 
 
 def deregister_service():
-    """Deregister service from Consul"""
+# Deregister service from Consul
+    
     return _registry.deregister()

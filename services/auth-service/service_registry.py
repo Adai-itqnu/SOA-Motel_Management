@@ -1,7 +1,3 @@
-"""
-Auth Service - Consul Service Registry
-Handles service registration and health check with Consul
-"""
 import socket
 import os
 import time
@@ -38,13 +34,11 @@ class ServiceRegistry:
         return False
     
     def _get_service_address(self):
-        """Get the service address for registration"""
         # Prefer a stable, resolvable name on the docker network.
         # docker-compose sets container_name: auth-service; this is resolvable via Docker DNS.
         return os.getenv('SERVICE_ADDRESS') or Config.SERVICE_NAME
 
     def _get_service_id(self):
-        """Get a stable service ID to avoid growing instances on each restart."""
         # Allow overriding for scaling, but default to stable per service+port.
         return os.getenv('SERVICE_ID') or f"{Config.SERVICE_NAME}-{Config.SERVICE_PORT}"
     

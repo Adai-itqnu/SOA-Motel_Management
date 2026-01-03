@@ -1,10 +1,11 @@
-"""Notification Service - External Service Calls"""
+# Notification Service - External Service Calls
 import requests
 from config import Config
 
 
 def get_service_url(service_name):
-    """Get service URL from Consul"""
+# Get service URL from Consul
+    
     try:
         url = f"http://{Config.CONSUL_HOST}:{Config.CONSUL_PORT}/v1/catalog/service/{service_name}"
         response = requests.get(url, timeout=5)
@@ -19,7 +20,8 @@ def get_service_url(service_name):
 
 
 def fetch_unpaid_bills():
-    """Fetch unpaid bills from bill-service"""
+# Fetch unpaid bills from bill-service
+    
     try:
         url = get_service_url('bill-service')
         response = requests.get(

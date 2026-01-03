@@ -1,15 +1,27 @@
-"""Contract Service - Main Application"""
+# Contract Service - Main Application
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-import datetime
-import uuid
 import requests
 import atexit
+
 from config import Config
 from model import contracts_collection
 from decorators import token_required, admin_required, internal_api_required
 from service_registry import register_service, deregister_service
 from services import get_service_url
+from utils import (
+    get_timestamp,
+    generate_contract_id,
+    get_user_id,
+    can_access_contract,
+    format_contract,
+    validate_contract_dates,
+    check_existing_active_contract,
+    check_contract_exists,
+    create_contract_document,
+    create_auto_contract_document
+)
+
 
 app = Flask(__name__)
 app.config.from_object(Config)
@@ -17,31 +29,7 @@ CORS(app)
 atexit.register(deregister_service)
 
 
-def get_timestamp():
-    return datetime.datetime.utcnow().isoformat()
-
-
-def generate_contract_id():
-    return f"CTR{uuid.uuid4().hex[:8].upper()}"
-
-
-def format_contract(contract):
-    return {
-        '_id': contract['_id'],
-        'room_id': contract.get('room_id', ''),
-        'user_id': contract.get('user_id', ''),
-        'start_date': contract.get('start_date', ''),
-        'end_date': contract.get('end_date', ''),
-        'monthly_rent': contract.get('monthly_rent', 0),
-        'deposit_amount': contract.get('deposit_amount', 0),
-        'deposit_status': contract.get('deposit_status', 'pending'),
-        'payment_day': contract.get('payment_day', 5),
-        'status': contract.get('status', 'active'),
-        'notes': contract.get('notes', ''),
-        'created_at': contract.get('created_at'),
-        'updated_at': contract.get('updated_at')
-    }
-
+# ============== Health Check ==============
 
 @app.route('/health', methods=['GET'])
 def health():
@@ -52,8 +40,8 @@ def health():
 
 @app.route('/internal/contracts', methods=['GET'])
 @internal_api_required
+# Get all contracts (for internal service calls like bill-service)
 def get_contracts_internal():
-    """Get all contracts (for internal service calls like bill-service)"""
     query = {}
     
     if request.args.get('status'):
@@ -73,9 +61,9 @@ def get_contracts_internal():
 
 @app.route('/api/contracts', methods=['GET'])
 @token_required
+# Get contracts list (admin sees all, user sees own)
 def get_contracts(current_user):
-    """Get contracts list (admin sees all, user sees own)"""
-    user_id = current_user.get('user_id') or current_user.get('_id')
+    user_id = get_user_id(current_user)
     role = current_user.get('role', '')
     
     query = {} if role == 'admin' else {'user_id': user_id}
@@ -95,16 +83,13 @@ def get_contracts(current_user):
 
 @app.route('/api/contracts/<contract_id>', methods=['GET'])
 @token_required
+# Get single contract details
 def get_contract(current_user, contract_id):
-    """Get single contract details"""
     contract = contracts_collection.find_one({'_id': contract_id})
     if not contract:
         return jsonify({'message': 'Hợp đồng không tồn tại!'}), 404
     
-    user_id = current_user.get('user_id') or current_user.get('_id')
-    role = current_user.get('role', '')
-    
-    if role != 'admin' and contract['user_id'] != user_id:
+    if not can_access_contract(current_user, contract):
         return jsonify({'message': 'Không có quyền xem hợp đồng này!'}), 403
     
     return jsonify(format_contract(contract)), 200
@@ -113,8 +98,8 @@ def get_contract(current_user, contract_id):
 @app.route('/api/contracts', methods=['POST'])
 @token_required
 @admin_required
+# Create a new contract (admin only)
 def create_contract(current_user):
-    """Create a new contract (admin only)"""
     data = request.get_json() or {}
     
     required = ['user_id', 'room_id', 'start_date', 'end_date', 'monthly_rent', 'deposit_amount']
@@ -122,41 +107,16 @@ def create_contract(current_user):
     if missing:
         return jsonify({'message': f"Thiếu trường: {', '.join(missing)}"}), 400
 
-    # Enforce: one active contract per user
-    existing_active = contracts_collection.find_one({
-        'user_id': data['user_id'],
-        'status': 'active'
-    })
-    if existing_active:
-        return jsonify({'message': 'Người dùng đã có hợp đồng đang hoạt động, không thể tạo thêm!'}), 400
+    # Check one active contract per user
+    if check_existing_active_contract(data['user_id']):
+        return jsonify({'message': 'Người dùng đã có hợp đồng đang hoạt động!'}), 400
     
     # Validate dates
-    try:
-        start = datetime.datetime.fromisoformat(data['start_date'])
-        end = datetime.datetime.fromisoformat(data['end_date'])
-        if end <= start:
-            return jsonify({'message': 'Ngày kết thúc phải sau ngày bắt đầu!'}), 400
-    except:
-        return jsonify({'message': 'Định dạng ngày không hợp lệ (YYYY-MM-DD)!'}), 400
+    start, end, error = validate_contract_dates(data['start_date'], data['end_date'])
+    if error:
+        return jsonify({'message': error}), 400
     
-    timestamp = get_timestamp()
-    contract_id = generate_contract_id()
-    
-    new_contract = {
-        '_id': contract_id,
-        'room_id': data['room_id'],
-        'user_id': data['user_id'],
-        'start_date': data['start_date'],
-        'end_date': data['end_date'],
-        'monthly_rent': float(data['monthly_rent']),
-        'deposit_amount': float(data['deposit_amount']),
-        'deposit_status': data.get('deposit_status', 'paid'),
-        'payment_day': int(data.get('payment_day', 5)),
-        'status': 'active',
-        'notes': data.get('notes', ''),
-        'created_at': timestamp,
-        'updated_at': timestamp
-    }
+    new_contract = create_contract_document(data, data['user_id'])
     
     try:
         contracts_collection.insert_one(new_contract)
@@ -171,24 +131,19 @@ def create_contract(current_user):
 @app.route('/api/contracts/from-reservation', methods=['POST'])
 @token_required
 @admin_required
+# Create a contract from room reservation (admin only)
 def create_contract_from_reservation(current_user):
-    """Create a contract by attaching the tenant who already paid room deposit (admin only)."""
     data = request.get_json() or {}
     room_id = data.get('room_id')
     if not room_id:
         return jsonify({'message': 'Thiếu room_id!'}), 400
 
-    # One active contract per user guard
-    tenant_user_id = data.get('user_id')
-    if tenant_user_id:
-        existing_active = contracts_collection.find_one({
-            'user_id': tenant_user_id,
-            'status': 'active'
-        })
-        if existing_active:
-            return jsonify({'message': 'Người dùng đã có hợp đồng đang hoạt động, không thể tạo thêm!'}), 400
+    # Check one active contract per user
+    user_user_id = data.get('user_id')
+    if user_user_id and check_existing_active_contract(user_user_id):
+        return jsonify({'message': 'Người dùng đã có hợp đồng đang hoạt động!'}), 400
 
-    # Required by contract model
+    # Validate required fields
     start_date = data.get('start_date')
     end_date = data.get('end_date')
     monthly_rent = data.get('monthly_rent')
@@ -197,20 +152,16 @@ def create_contract_from_reservation(current_user):
         return jsonify({'message': 'Thiếu start_date, end_date hoặc monthly_rent!'}), 400
 
     # Validate dates
-    try:
-        start = datetime.datetime.fromisoformat(start_date)
-        end = datetime.datetime.fromisoformat(end_date)
-        if end <= start:
-            return jsonify({'message': 'Ngày kết thúc phải sau ngày bắt đầu!'}), 400
-    except Exception:
-        return jsonify({'message': 'Định dạng ngày không hợp lệ (YYYY-MM-DD)!'}), 400
+    start, end, error = validate_contract_dates(start_date, end_date)
+    if error:
+        return jsonify({'message': error}), 400
 
     room_service_url = get_service_url('room-service')
     if not room_service_url:
         return jsonify({'message': 'Không thể kết nối room-service!'}), 503
 
-    # Fetch room to get reserved tenant
-    auth_header = request.headers.get('Authorization') or request.headers.get('authorization')
+    # Fetch room info
+    auth_header = request.headers.get('Authorization')
     try:
         resp = requests.get(
             f"{room_service_url}/api/rooms/{room_id}",
@@ -221,30 +172,27 @@ def create_contract_from_reservation(current_user):
         return jsonify({'message': f'Lỗi gọi room-service: {str(e)}'}), 503
 
     if not resp.ok:
-        return jsonify({'message': 'Không tìm thấy phòng hoặc không thể lấy thông tin phòng!'}), 404
+        return jsonify({'message': 'Không tìm thấy phòng!'}), 404
 
     room = resp.json() or {}
     if room.get('status') != 'reserved':
         return jsonify({'message': 'Phòng không ở trạng thái giữ (reserved)!'}), 400
 
     if (room.get('reservation_status') or '') != 'paid':
-        return jsonify({'message': 'Phòng chưa được xác nhận cọc (reservation_status != paid)!'}), 400
+        return jsonify({'message': 'Phòng chưa được xác nhận cọc!'}), 400
 
-    tenant_id = room.get('reserved_by_tenant_id')
-    if not tenant_id:
-        return jsonify({'message': 'Phòng chưa có người giữ (reserved_by_tenant_id)!'}), 400
+    user_id = room.get('reserved_by_user_id')
+    if not user_id:
+        return jsonify({'message': 'Phòng chưa có người giữ!'}), 400
 
-    # Prefer room deposit; allow override from request
-    deposit_amount = data.get('deposit_amount')
-    if deposit_amount is None:
-        deposit_amount = room.get('deposit', 0)
+    deposit_amount = data.get('deposit_amount') or room.get('deposit', 0)
 
     timestamp = get_timestamp()
     contract_id = generate_contract_id()
     new_contract = {
         '_id': contract_id,
         'room_id': room_id,
-        'user_id': str(tenant_id),
+        'user_id': str(user_id),
         'start_date': start_date,
         'end_date': end_date,
         'monthly_rent': float(monthly_rent),
@@ -262,18 +210,17 @@ def create_contract_from_reservation(current_user):
     except Exception as e:
         return jsonify({'message': f'Lỗi tạo hợp đồng: {str(e)}'}), 500
 
-    # Occupy the room via internal API key (service-to-service)
+    # Occupy the room
     try:
         occ = requests.put(
             f"{room_service_url}/internal/rooms/{room_id}/occupy",
-            json={'tenant_id': str(tenant_id), 'contract_id': contract_id},
+            json={'user_id': str(user_id), 'contract_id': contract_id},
             headers={'X-Internal-Api-Key': Config.INTERNAL_API_KEY},
             timeout=8,
         )
         if not occ.ok:
-            # Rollback contract if room transition fails
             contracts_collection.delete_one({'_id': contract_id})
-            return jsonify({'message': f"Không thể cập nhật trạng thái phòng: {occ.text}"}), 502
+            return jsonify({'message': f"Không thể cập nhật phòng: {occ.text}"}), 502
     except Exception as e:
         contracts_collection.delete_one({'_id': contract_id})
         return jsonify({'message': f'Lỗi cập nhật phòng: {str(e)}'}), 502
@@ -284,8 +231,8 @@ def create_contract_from_reservation(current_user):
 @app.route('/api/contracts/<contract_id>', methods=['PUT'])
 @token_required
 @admin_required
+# Update contract (admin only)
 def update_contract(current_user, contract_id):
-    """Update contract (admin only)"""
     contract = contracts_collection.find_one({'_id': contract_id})
     if not contract:
         return jsonify({'message': 'Hợp đồng không tồn tại!'}), 404
@@ -312,8 +259,8 @@ def update_contract(current_user, contract_id):
 @app.route('/api/contracts/<contract_id>/terminate', methods=['PUT'])
 @token_required
 @admin_required
+# Terminate contract (admin only)
 def terminate_contract(current_user, contract_id):
-    """Terminate contract (admin only)"""
     contract = contracts_collection.find_one({'_id': contract_id})
     if not contract:
         return jsonify({'message': 'Hợp đồng không tồn tại!'}), 404
@@ -323,13 +270,10 @@ def terminate_contract(current_user, contract_id):
     
     contracts_collection.update_one(
         {'_id': contract_id},
-        {'$set': {
-            'status': 'terminated',
-            'updated_at': get_timestamp()
-        }}
+        {'$set': {'status': 'terminated', 'updated_at': get_timestamp()}}
     )
 
-    # Vacate room so it becomes available again
+    # Vacate room
     room_service_url = get_service_url('room-service')
     if room_service_url:
         try:
@@ -339,7 +283,7 @@ def terminate_contract(current_user, contract_id):
                 headers={'X-Internal-Api-Key': Config.INTERNAL_API_KEY},
                 timeout=8,
             )
-        except Exception:
+        except:
             pass
 
     return jsonify({'message': 'Kết thúc hợp đồng thành công!'}), 200
@@ -348,8 +292,8 @@ def terminate_contract(current_user, contract_id):
 @app.route('/api/contracts/<contract_id>/extend', methods=['PUT'])
 @token_required
 @admin_required
+# Extend contract end date (admin only)
 def extend_contract(current_user, contract_id):
-    """Extend contract end date (admin only)"""
     data = request.get_json() or {}
     
     if 'new_end_date' not in data:
@@ -362,20 +306,13 @@ def extend_contract(current_user, contract_id):
     if contract['status'] != 'active':
         return jsonify({'message': 'Hợp đồng đã kết thúc!'}), 400
     
-    try:
-        new_end = datetime.datetime.fromisoformat(data['new_end_date'])
-        old_end = datetime.datetime.fromisoformat(contract['end_date'])
-        if new_end <= old_end:
-            return jsonify({'message': 'Ngày mới phải sau ngày hiện tại!'}), 400
-    except:
-        return jsonify({'message': 'Định dạng ngày không hợp lệ!'}), 400
+    _, _, error = validate_contract_dates(contract['end_date'], data['new_end_date'])
+    if error:
+        return jsonify({'message': 'Ngày mới phải sau ngày hiện tại!'}), 400
     
     contracts_collection.update_one(
         {'_id': contract_id},
-        {'$set': {
-            'end_date': data['new_end_date'],
-            'updated_at': get_timestamp()
-        }}
+        {'$set': {'end_date': data['new_end_date'], 'updated_at': get_timestamp()}}
     )
     
     return jsonify({'message': 'Gia hạn hợp đồng thành công!'}), 200
@@ -383,8 +320,8 @@ def extend_contract(current_user, contract_id):
 
 @app.route('/api/contracts/room/<room_id>', methods=['GET'])
 @token_required
+# Get all contracts for a room
 def get_contracts_by_room(current_user, room_id):
-    """Get all contracts for a room"""
     contracts = list(contracts_collection.find({'room_id': room_id}).sort('created_at', -1))
     return jsonify({
         'contracts': [format_contract(c) for c in contracts],
@@ -394,12 +331,11 @@ def get_contracts_by_room(current_user, room_id):
 
 @app.route('/api/contracts/user/<user_id>', methods=['GET'])
 @token_required
+# Get all contracts for a user
 def get_contracts_by_user(current_user, user_id):
-    """Get all contracts for a user"""
-    current_user_id = current_user.get('user_id') or current_user.get('_id')
+    current_user_id = get_user_id(current_user)
     role = current_user.get('role', '')
     
-    # Only admin or the user themselves can view
     if role != 'admin' and current_user_id != user_id:
         return jsonify({'message': 'Không có quyền!'}), 403
     
@@ -412,38 +348,28 @@ def get_contracts_by_user(current_user, user_id):
 
 # ============== Internal API (Service-to-Service) ==============
 
-from decorators import internal_api_required
-
 @app.route('/internal/contracts/auto-create', methods=['POST'])
 @internal_api_required
+# Auto-create contract from paid room reservation
 def auto_create_contract():
-    """Auto-create contract from paid room reservation (called by payment-service)"""
     data = request.get_json() or {}
     room_id = data.get('room_id')
-    tenant_id = data.get('tenant_id')
+    user_id = data.get('user_id')
     payment_id = data.get('payment_id')
-    check_in_date = data.get('check_in_date')  # From booking
+    check_in_date = data.get('check_in_date')
 
-    if not room_id or not tenant_id:
-        return jsonify({'message': 'Missing room_id or tenant_id'}), 400
+    if not room_id or not user_id:
+        return jsonify({'message': 'Missing room_id or user_id'}), 400
 
-    # Check if contract already exists for this room or tenant (one active per tenant)
-    existing = contracts_collection.find_one({
-        'room_id': room_id,
-        'user_id': str(tenant_id),
-        'status': 'active'
-    })
+    # Check existing contract
+    existing = check_contract_exists(room_id, user_id)
     if existing:
         return jsonify({'message': 'Contract already exists', 'contract': format_contract(existing)}), 200
 
-    existing_for_tenant = contracts_collection.find_one({
-        'user_id': str(tenant_id),
-        'status': 'active'
-    })
-    if existing_for_tenant:
-        return jsonify({'message': 'Tenant already has an active contract'}), 400
+    if check_existing_active_contract(str(user_id)):
+        return jsonify({'message': 'User already has an active contract'}), 400
 
-    # Get room info for price
+    # Get room info
     room_service_url = get_service_url('room-service')
     if not room_service_url:
         return jsonify({'message': 'Cannot connect to room-service'}), 503
@@ -462,37 +388,8 @@ def auto_create_contract():
 
     room = resp.json() or {}
 
-    # Calculate dates
-    if check_in_date:
-        try:
-            start = datetime.datetime.fromisoformat(check_in_date)
-        except:
-            start = datetime.datetime.utcnow()
-    else:
-        start = datetime.datetime.utcnow()
-    
-    # Contract for 12 months by default
-    end = start + datetime.timedelta(days=365)
-
-    timestamp = get_timestamp()
-    contract_id = generate_contract_id()
-    
-    new_contract = {
-        '_id': contract_id,
-        'room_id': room_id,
-        'user_id': str(tenant_id),
-        'start_date': start.strftime('%Y-%m-%d'),
-        'end_date': end.strftime('%Y-%m-%d'),
-        'monthly_rent': float(room.get('price', 0)),
-        'deposit_amount': float(room.get('deposit', 0)),
-        'deposit_status': 'paid',
-        'deposit_payment_id': payment_id,
-        'payment_day': 5,  # Default: 5th of each month
-        'status': 'active',
-        'notes': 'Hợp đồng tự động tạo sau thanh toán cọc thành công',
-        'created_at': timestamp,
-        'updated_at': timestamp,
-    }
+    # Create contract
+    new_contract = create_auto_contract_document(room_id, user_id, room, payment_id, check_in_date)
 
     try:
         contracts_collection.insert_one(new_contract)
@@ -503,7 +400,7 @@ def auto_create_contract():
     try:
         occ = requests.put(
             f"{room_service_url}/internal/rooms/{room_id}/occupy",
-            json={'tenant_id': str(tenant_id), 'contract_id': contract_id},
+            json={'user_id': str(user_id), 'contract_id': new_contract['_id']},
             headers={'X-Internal-Api-Key': Config.INTERNAL_API_KEY},
             timeout=8,
         )
@@ -512,12 +409,13 @@ def auto_create_contract():
     except Exception as e:
         print(f"Warning: Error occupying room: {e}")
 
-    print(f"Auto-created contract {contract_id} for room {room_id}, tenant {tenant_id}")
+    print(f"Auto-created contract {new_contract['_id']} for room {room_id}, user {user_id}")
     return jsonify({'message': 'Contract created', 'contract': format_contract(new_contract)}), 201
 
+
+# ============== Entry Point ==============
 
 if __name__ == '__main__':
     print(f"\n{'='*50}\n  {Config.SERVICE_NAME.upper()}\n  Port: {Config.SERVICE_PORT}\n{'='*50}\n")
     register_service()
     app.run(host='0.0.0.0', port=Config.SERVICE_PORT, debug=Config.DEBUG)
-

@@ -1,4 +1,4 @@
-"""Report Service Configuration"""
+# Report Service Configuration
 import os
 
 class Config:

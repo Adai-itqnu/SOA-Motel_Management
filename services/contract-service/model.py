@@ -1,4 +1,4 @@
-"""Contract Service Database Models"""
+# Contract Service Database Models
 from pymongo import MongoClient, ASCENDING, DESCENDING
 from config import Config
 

@@ -93,10 +93,8 @@ def build_querydr_payload(
     client_ip: str,
     request_id: str,
 ) -> dict[str, str]:
-    """Build VNPay QueryDR payload.
-
-    `transaction_date` should be in YYYYMMDDHHMMSS (usually vnp_PayDate).
-    """
+    # Build VNPay QueryDR payload.
+    # transaction_date should be in YYYYMMDDHHMMSS (usually vnp_PayDate).
 
     # VNPay typically expects timestamps in GMT+7
     now_gmt7 = datetime.datetime.utcnow() + datetime.timedelta(hours=7)
@@ -119,7 +117,8 @@ def build_querydr_payload(
 
 
 def parse_vnpay_kv_response(text: str) -> dict[str, str]:
-    """Parse VNPay response formats like: key=value&key2=value2."""
+# Parse VNPay response formats like: key=value&key2=value2.
+    
     parsed = urllib.parse.parse_qs(text, keep_blank_values=True)
     return {k: (v[0] if isinstance(v, list) and v else "") for k, v in parsed.items()}
 
@@ -136,11 +135,9 @@ def querydr_verify_transaction(
     request_id: str,
     timeout_seconds: int = 10,
 ) -> tuple[bool, dict[str, str]]:
-    """Call VNPay QueryDR to verify a transaction.
-
-    Returns (verified, response_params).
-    verified == True only when response signature is valid AND the transaction status indicates success.
-    """
+    # Call VNPay QueryDR to verify a transaction.
+    # Returns (verified, response_params).
+    # verified == True only when response signature is valid AND the transaction status indicates success.
 
     if not api_url:
         return False, {"message": "Missing VNPAY_API_URL"}

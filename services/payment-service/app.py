@@ -3,26 +3,14 @@ from __future__ import annotations
 import datetime
 import os
 import uuid
-from functools import wraps
 
-import jwt
 from flask import Flask, jsonify, redirect, request
 from flask_cors import CORS
 
-from config import (
-    JWT_SECRET,
-    SERVICE_NAME,
-    SERVICE_PORT,
-    VNPAY_API_URL,
-    VNPAY_CONFIRM_MODE,
-    VNPAY_HASH_SECRET,
-    VNPAY_IPN_URL,
-    VNPAY_RETURN_URL,
-    VNPAY_TMN_CODE,
-    VNPAY_URL,
-)
+from config import Config
 from model import payments_collection
 from service_registry import register_service
+from decorators import token_required, admin_required, internal_api_required
 from utils import (
     auto_create_contract,
     calculate_total_paid,
@@ -35,44 +23,6 @@ from utils import (
     send_notification,
 )
 from vnpay import build_payment_url, querydr_verify_transaction, validate_return_or_ipn
-
-
-def _get_bearer_token() -> str | None:
-    token = request.headers.get("Authorization") or request.headers.get("authorization")
-    if not token:
-        return None
-    if token.lower().startswith("bearer "):
-        return token[7:]
-    return token
-
-
-def token_required(fn):
-    @wraps(fn)
-    def decorated(*args, **kwargs):
-        token = _get_bearer_token()
-        if not token:
-            return jsonify({"message": "Token không tồn tại!"}), 401
-
-        try:
-            payload = jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
-        except jwt.ExpiredSignatureError:
-            return jsonify({"message": "Token đã hết hạn!"}), 401
-        except jwt.InvalidTokenError:
-            return jsonify({"message": "Token không hợp lệ!"}), 401
-
-        return fn(payload, *args, **kwargs)
-
-    return decorated
-
-
-def admin_required(fn):
-    @wraps(fn)
-    def decorated(current_user, *args, **kwargs):
-        if current_user.get("role") != "admin":
-            return jsonify({"message": "Yêu cầu quyền admin!"}), 403
-        return fn(current_user, *args, **kwargs)
-
-    return decorated
 
 
 def _utc_now_iso() -> str:
@@ -94,9 +44,9 @@ def _get_client_ip() -> str:
 app = Flask(__name__)
 CORS(app)
 
-app.config["SECRET_KEY"] = JWT_SECRET
-app.config["SERVICE_NAME"] = SERVICE_NAME
-app.config["SERVICE_PORT"] = SERVICE_PORT
+app.config["SECRET_KEY"] = Config.JWT_SECRET
+app.config["SERVICE_NAME"] = Config.SERVICE_NAME
+app.config["SERVICE_PORT"] = Config.SERVICE_PORT
 
 
 # ---------------------------
@@ -183,9 +133,9 @@ def create_payment(current_user):
     while payments_collection.find_one({"_id": payment_id}):
         payment_id = f"P{uuid.uuid4().hex[:10].upper()}"
 
-    tenant_id = data.get("tenant_id")
+    user_id = data.get("user_id")
     if current_user.get("role") != "admin":
-        tenant_id = current_user.get("user_id") or current_user.get("_id")
+        user_id = current_user.get("user_id") or current_user.get("_id")
 
     payment_date = data.get("payment_date") or _today_str()
 
@@ -193,7 +143,7 @@ def create_payment(current_user):
         "_id": payment_id,
         "payment_type": "bill_payment",
         "bill_id": bill_id,
-        "tenant_id": tenant_id,
+        "user_id": user_id,
         "amount": amount,
         "currency": "VND",
         "method": data["method"],
@@ -219,7 +169,7 @@ def get_payments(current_user):
     bill_id = request.args.get("bill_id")
     room_id = request.args.get("room_id")
     booking_id = request.args.get("booking_id")
-    tenant_id = request.args.get("tenant_id")
+    user_id = request.args.get("user_id")
     payment_date = request.args.get("payment_date")
     status = request.args.get("status")
     payment_type = request.args.get("payment_type")
@@ -231,8 +181,8 @@ def get_payments(current_user):
         query["room_id"] = room_id
     if booking_id:
         query["booking_id"] = booking_id
-    if tenant_id:
-        query["tenant_id"] = tenant_id
+    if user_id:
+        query["user_id"] = user_id
     if payment_date:
         query["payment_date"] = payment_date
     if status:
@@ -241,7 +191,7 @@ def get_payments(current_user):
         query["payment_type"] = payment_type
 
     if current_user.get("role") != "admin":
-        query["tenant_id"] = current_user.get("user_id") or current_user.get("_id")
+        query["user_id"] = current_user.get("user_id") or current_user.get("_id")
 
     payments = list(payments_collection.find(query).sort("payment_date", -1))
     for p in payments:
@@ -258,7 +208,7 @@ def get_payment(current_user, payment_id):
         return jsonify({"message": "Thanh toán không tồn tại!"}), 404
 
     if current_user.get("role") != "admin":
-        if payment.get("tenant_id") != (current_user.get("user_id") or current_user.get("_id")):
+        if payment.get("user_id") != (current_user.get("user_id") or current_user.get("_id")):
             return jsonify({"message": "Không có quyền xem thanh toán này!"}), 403
 
     payment["id"] = payment.get("_id")
@@ -466,9 +416,9 @@ def create_deposit_payment(current_user):
     if amount <= 0:
         return jsonify({"message": "Số tiền phải lớn hơn 0!"}), 400
 
-    tenant_id = current_user.get("user_id") or current_user.get("_id")
-    if not tenant_id:
-        return jsonify({"message": "Không tìm thấy tenant_id!"}), 400
+    user_id = current_user.get("user_id") or current_user.get("_id")
+    if not user_id:
+        return jsonify({"message": "Không tìm thấy user_id!"}), 400
 
     payment_id = f"P{uuid.uuid4().hex[:10].upper()}"
     while payments_collection.find_one({"_id": payment_id}):
@@ -480,7 +430,7 @@ def create_deposit_payment(current_user):
         "booking_id": data.get("booking_id"),
         "contract_id": data.get("contract_id"),
         "bill_id": None,
-        "tenant_id": tenant_id,
+        "user_id": user_id,
         "amount": amount,
         "currency": "VND",
         "method": "vnpay",
@@ -527,7 +477,7 @@ def vnpay_create_deposit(current_user):
         "_id": payment_id,
         "payment_type": "booking_deposit",
         "booking_id": booking_id,
-        "tenant_id": booking.get("user_id"),
+        "user_id": booking.get("user_id"),
         "amount": float(deposit_amount_vnd),
         "amount_vnd": deposit_amount_vnd,
         "currency": "VND",
@@ -541,14 +491,14 @@ def vnpay_create_deposit(current_user):
 
     order_info = f"Thanh toan coc booking {booking_id}"
     payment_url = build_payment_url(
-        base_url=VNPAY_URL,
-        tmn_code=VNPAY_TMN_CODE,
-        secret=VNPAY_HASH_SECRET,
+        base_url=Config.VNPAY_URL,
+        tmn_code=Config.VNPAY_TMN_CODE,
+        secret=Config.VNPAY_HASH_SECRET,
         txn_ref=payment_id,
         amount_vnd=deposit_amount_vnd,
         order_info=order_info,
-        return_url=VNPAY_RETURN_URL,
-        ipn_url=VNPAY_IPN_URL or None,
+        return_url=Config.VNPAY_RETURN_URL,
+        ipn_url=Config.VNPAY_IPN_URL or None,
         client_ip=_get_client_ip(),
     )
 
@@ -576,8 +526,8 @@ def vnpay_create_bill_payment(current_user):
     bill = bill_data if isinstance(bill_data, dict) else bill_data.get("bill", bill_data)
 
     # Authz: only owner or admin
-    tenant_id = current_user.get("user_id") or current_user.get("_id")
-    if current_user.get("role") != "admin" and bill.get("user_id") != tenant_id:
+    user_id = current_user.get("user_id") or current_user.get("_id")
+    if current_user.get("role") != "admin" and bill.get("user_id") != user_id:
         return jsonify({"message": "Không có quyền thanh toán hóa đơn này!"}), 403
 
     status = (bill.get("status") or "").lower()
@@ -597,7 +547,7 @@ def vnpay_create_bill_payment(current_user):
         "_id": payment_id,
         "payment_type": "bill_payment",
         "bill_id": bill_id,
-        "tenant_id": str(tenant_id),
+        "user_id": str(user_id),
         "amount": float(amount_vnd),
         "amount_vnd": amount_vnd,
         "bill_total": bill_total,
@@ -612,14 +562,14 @@ def vnpay_create_bill_payment(current_user):
 
     order_info = f"Thanh toan hoa don {bill_id}"
     payment_url = build_payment_url(
-        base_url=VNPAY_URL,
-        tmn_code=VNPAY_TMN_CODE,
-        secret=VNPAY_HASH_SECRET,
+        base_url=Config.VNPAY_URL,
+        tmn_code=Config.VNPAY_TMN_CODE,
+        secret=Config.VNPAY_HASH_SECRET,
         txn_ref=payment_id,
         amount_vnd=amount_vnd,
         order_info=order_info,
-        return_url=VNPAY_RETURN_URL,
-        ipn_url=VNPAY_IPN_URL or None,
+        return_url=Config.VNPAY_RETURN_URL,
+        ipn_url=Config.VNPAY_IPN_URL or None,
         client_ip=_get_client_ip(),
     )
 
@@ -652,9 +602,9 @@ def vnpay_create_room_deposit(current_user):
     if deposit_amount <= 0:
         return jsonify({"message": "Phòng này chưa cấu hình tiền cọc!"}), 400
 
-    tenant_id = current_user.get("user_id") or current_user.get("_id")
-    if not tenant_id:
-        return jsonify({"message": "Không tìm thấy tenant_id!"}), 400
+    user_id = current_user.get("user_id") or current_user.get("_id")
+    if not user_id:
+        return jsonify({"message": "Không tìm thấy user_id!"}), 400
 
     deposit_amount_vnd = int(round(deposit_amount))
 
@@ -663,7 +613,7 @@ def vnpay_create_room_deposit(current_user):
         "_id": payment_id,
         "payment_type": "room_reservation_deposit",
         "room_id": room_id,
-        "tenant_id": str(tenant_id),
+        "user_id": str(user_id),
         "amount": float(deposit_amount_vnd),
         "amount_vnd": deposit_amount_vnd,
         "currency": "VND",
@@ -677,21 +627,21 @@ def vnpay_create_room_deposit(current_user):
     payments_collection.insert_one(payment_doc)
 
     # Hold the room BEFORE redirecting to VNPay to prevent double booking
-    if not hold_room_reservation(room_id, tenant_id, payment_id):
+    if not hold_room_reservation(room_id, user_id, payment_id):
         # If hold fails, delete payment and return error
         payments_collection.delete_one({"_id": payment_id})
         return jsonify({"message": "Không thể giữ phòng. Phòng có thể đã được đặt bởi người khác."}), 400
 
     order_info = f"Thanh toan coc giu phong {room_id}"
     payment_url = build_payment_url(
-        base_url=VNPAY_URL,
-        tmn_code=VNPAY_TMN_CODE,
-        secret=VNPAY_HASH_SECRET,
+        base_url=Config.VNPAY_URL,
+        tmn_code=Config.VNPAY_TMN_CODE,
+        secret=Config.VNPAY_HASH_SECRET,
         txn_ref=payment_id,
         amount_vnd=deposit_amount_vnd,
         order_info=order_info,
-        return_url=VNPAY_RETURN_URL,
-        ipn_url=VNPAY_IPN_URL or None,
+        return_url=Config.VNPAY_RETURN_URL,
+        ipn_url=Config.VNPAY_IPN_URL or None,
         client_ip=_get_client_ip(),
     )
 
@@ -702,7 +652,7 @@ def vnpay_create_room_deposit(current_user):
 def vnpay_ipn():
     vnp_params = request.args.to_dict()
 
-    if not validate_return_or_ipn(vnp_params, VNPAY_HASH_SECRET):
+    if not validate_return_or_ipn(vnp_params, Config.VNPAY_HASH_SECRET):
         return jsonify({"RspCode": "97", "Message": "Invalid Signature"})
 
     payment_id = vnp_params.get("vnp_TxnRef")
@@ -774,9 +724,9 @@ def vnpay_ipn():
         if payment.get("payment_type") == "room_reservation_deposit" and payment.get("room_id"):
             confirm_room_reservation(payment["room_id"], payment_id)
             # Send notification for successful deposit payment
-            if payment.get("tenant_id"):
+            if payment.get("user_id"):
                 send_notification(
-                    payment.get("tenant_id"),
+                    payment.get("user_id"),
                     "Đặt cọc thành công",
                     f"Bạn đã đặt cọc phòng thành công. Vui lòng vào 'Phòng của tôi' để xem chi tiết và xác nhận nhận phòng vào ngày check-in.",
                     "payment",
@@ -786,9 +736,9 @@ def vnpay_ipn():
         if payment.get("payment_type") == "bill_payment" and payment.get("bill_id"):
             bill_total = payment.get("bill_total") or payment.get("amount") or amount_received_vnd
             update_bill_status_if_paid(payment["bill_id"], bill_total)
-            if payment.get("tenant_id"):
+            if payment.get("user_id"):
                 send_notification(
-                    payment.get("tenant_id"),
+                    payment.get("user_id"),
                     "Thanh toán thành công",
                     f"Hóa đơn {payment.get('bill_id')} đã được thanh toán thành công.",
                     "payment",
@@ -829,9 +779,9 @@ def vnpay_return():
     response_code = vnp_params.get("vnp_ResponseCode") or ""
     txn_ref = vnp_params.get("vnp_TxnRef") or ""
 
-    signature_ok = validate_return_or_ipn(vnp_params, VNPAY_HASH_SECRET)
+    signature_ok = validate_return_or_ipn(vnp_params, Config.VNPAY_HASH_SECRET)
 
-    mode = (VNPAY_CONFIRM_MODE or "return").lower()
+    mode = (Config.VNPAY_CONFIRM_MODE or "return").lower()
 
     # Best-effort update of payment record (return can arrive before/without IPN)
     # Modes:
@@ -899,9 +849,9 @@ def vnpay_return():
                             if payment.get("payment_type") == "bill_payment" and payment.get("bill_id"):
                                 bill_total = payment.get("bill_total") or payment.get("amount") or amount_received_vnd
                                 update_bill_status_if_paid(payment["bill_id"], bill_total)
-                                if payment.get("tenant_id"):
+                                if payment.get("user_id"):
                                     send_notification(
-                                        payment.get("tenant_id"),
+                                        payment.get("user_id"),
                                         "Thanh toán thành công",
                                         f"Hóa đơn {payment.get('bill_id')} đã được thanh toán thành công.",
                                         "payment",
@@ -910,9 +860,9 @@ def vnpay_return():
                             if payment.get("payment_type") == "room_reservation_deposit" and payment.get("room_id"):
                                 confirm_room_reservation(payment["room_id"], txn_ref)
                                 # Send notification for successful deposit payment
-                                if payment.get("tenant_id"):
+                                if payment.get("user_id"):
                                     send_notification(
-                                        payment.get("tenant_id"),
+                                        payment.get("user_id"),
                                         "Đặt cọc thành công",
                                         f"Bạn đã đặt cọc phòng thành công. Vui lòng vào 'Phòng của tôi' để xác nhận nhận phòng.",
                                         "payment",
@@ -942,9 +892,9 @@ def vnpay_return():
                         request_id = uuid.uuid4().hex
 
                         verified, qdr = querydr_verify_transaction(
-                            api_url=VNPAY_API_URL,
-                            tmn_code=VNPAY_TMN_CODE,
-                            secret=VNPAY_HASH_SECRET,
+                            api_url=Config.VNPAY_API_URL,
+                            tmn_code=Config.VNPAY_TMN_CODE,
+                            secret=Config.VNPAY_HASH_SECRET,
                             txn_ref=txn_ref,
                             order_info=order_info,
                             transaction_date=transaction_date,
@@ -981,12 +931,20 @@ def vnpay_return():
                                 )
                             if payment.get("payment_type") == "room_reservation_deposit" and payment.get("room_id"):
                                 confirm_room_reservation(payment["room_id"], txn_ref)
+                                if payment.get("user_id"):
+                                    send_notification(
+                                        payment.get("user_id"),
+                                        "Đặt cọc thành công",
+                                        f"Bạn đã đặt cọc phòng thành công. Vui lòng vào 'Phòng của tôi' để xác nhận nhận phòng.",
+                                        "payment",
+                                        {"room_id": payment.get("room_id"), "payment_id": txn_ref, "type": "room_deposit"},
+                                    )
                             if payment.get("payment_type") == "bill_payment" and payment.get("bill_id"):
                                 bill_total = payment.get("bill_total") or payment.get("amount") or amount_received_vnd
                                 update_bill_status_if_paid(payment["bill_id"], bill_total)
-                                if payment.get("tenant_id"):
+                                if payment.get("user_id"):
                                     send_notification(
-                                        payment.get("tenant_id"),
+                                        payment.get("user_id"),
                                         "Thanh toán thành công",
                                         f"Hóa đơn {payment.get('bill_id')} đã được thanh toán thành công.",
                                         "payment",
@@ -1047,6 +1005,14 @@ def vnpay_return():
             # Finalize reservation if this is room deposit.
             if is_room_reservation and room_id:
                 confirm_room_reservation(room_id, txn_ref)
+                if payment and payment.get("user_id"):
+                    send_notification(
+                        payment.get("user_id"),
+                        "Đặt cọc thành công",
+                        f"Bạn đã đặt cọc phòng thành công. Vui lòng vào 'Phòng của tôi' để xác nhận nhận phòng.",
+                        "payment",
+                        {"room_id": room_id, "payment_id": txn_ref, "type": "room_deposit"},
+                    )
                 # NOTE: Contract created when user clicks check-in, not here
             return redirect(f"{frontend_redirect_base}?vnpay=success&{suffix}")
         if mode == "ipn":
@@ -1054,6 +1020,14 @@ def vnpay_return():
         if verified:
             if is_room_reservation and room_id:
                 confirm_room_reservation(room_id, txn_ref)
+                if payment and payment.get("user_id"):
+                    send_notification(
+                        payment.get("user_id"),
+                        "Đặt cọc thành công",
+                        f"Bạn đã đặt cọc phòng thành công. Vui lòng vào 'Phòng của tôi' để xác nhận nhận phòng.",
+                        "payment",
+                        {"room_id": room_id, "payment_id": txn_ref, "type": "room_deposit"},
+                    )
                 # NOTE: Contract created when user clicks check-in, not here
             return redirect(f"{frontend_redirect_base}?vnpay=success&{suffix}")
         code = verified_code or verified_txn_status or "pending"
@@ -1084,10 +1058,8 @@ def vnpay_return():
 @app.route("/api/payments/vnpay/verify/<payment_id>", methods=["GET"])
 @token_required
 def vnpay_verify_payment(current_user, payment_id):
-    """Verify a VNPay payment.
-
-    Used by frontend polling when return page shows `vnpay=pending`.
-    """
+    # Verify a VNPay payment.
+    # Used by frontend polling when return page shows `vnpay=pending`.
 
     payment = payments_collection.find_one({"_id": payment_id})
     if not payment:
@@ -1096,7 +1068,7 @@ def vnpay_verify_payment(current_user, payment_id):
     # Permission: admin can verify any; user can verify own payments.
     if current_user.get("role") != "admin":
         me = current_user.get("user_id") or current_user.get("_id")
-        if payment.get("tenant_id") != me:
+        if payment.get("user_id") != me:
             return jsonify({"message": "Không có quyền!"}), 403
 
     # If already completed/failed, return current state.
@@ -1130,14 +1102,14 @@ def vnpay_verify_payment(current_user, payment_id):
             200,
         )
 
-    mode = (VNPAY_CONFIRM_MODE or "return").lower()
+    mode = (Config.VNPAY_CONFIRM_MODE or "return").lower()
 
     vnp_return = payment.get("vnpay_return") or {}
 
     # Mode: return -> finalize using stored return params (signature + amount match)
     if mode == "return":
         response_code = vnp_return.get("vnp_ResponseCode") or ""
-        signature_ok = validate_return_or_ipn(vnp_return, VNPAY_HASH_SECRET) if vnp_return else False
+        signature_ok = validate_return_or_ipn(vnp_return, Config.VNPAY_HASH_SECRET) if vnp_return else False
 
         if response_code == "00" and signature_ok:
             expected_amount_vnd = int(round(float(payment.get("amount_vnd") or payment.get("amount") or 0)))
@@ -1231,9 +1203,9 @@ def vnpay_verify_payment(current_user, payment_id):
         order_info = f"Thanh toan {payment_id}".strip()
 
     verified, qdr = querydr_verify_transaction(
-        api_url=VNPAY_API_URL,
-        tmn_code=VNPAY_TMN_CODE,
-        secret=VNPAY_HASH_SECRET,
+        api_url=Config.VNPAY_API_URL,
+        tmn_code=Config.VNPAY_TMN_CODE,
+        secret=Config.VNPAY_HASH_SECRET,
         txn_ref=payment_id,
         order_info=order_info,
         transaction_date=transaction_date,
@@ -1311,5 +1283,4 @@ def vnpay_verify_payment(current_user, payment_id):
 if __name__ == "__main__":
     register_service()
     debug_mode = os.getenv("FLASK_DEBUG", "false").lower() == "true"
-    app.run(host="0.0.0.0", port=SERVICE_PORT, debug=debug_mode)
-
+    app.run(host="0.0.0.0", port=Config.SERVICE_PORT, debug=debug_mode)

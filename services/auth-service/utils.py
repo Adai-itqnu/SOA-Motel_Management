@@ -1,14 +1,9 @@
-"""
-Auth Service - Utility Functions
-Helper functions for user management and validation
-"""
 import datetime
 import re
 from model import users_collection
 
 
 def generate_user_id():
-    """Generate unique user ID in format U001, U002, etc."""
     # Find the highest existing ID
     last_user = users_collection.find_one(
         {'_id': {'$regex': '^U\\d+$'}},
@@ -27,30 +22,30 @@ def generate_user_id():
     return f"U{count + 1:03d}"
 
 
+# Validate email format
 def validate_email(email):
-    """Validate email format"""
     pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
     return bool(re.match(pattern, email))
 
 
+# Validate Vietnamese phone number
 def validate_phone(phone):
-    """Validate Vietnamese phone number"""
     if not phone:
         return True  # Phone is optional
     pattern = r'^(0|\+84)[0-9]{9,10}$'
     return bool(re.match(pattern, phone))
 
 
+# Validate Vietnamese ID card (CCCD/CMND)
 def validate_id_card(id_card):
-    """Validate Vietnamese ID card (CCCD/CMND)"""
     if not id_card:
         return True  # ID card is optional
     # CCCD: 12 digits, CMND: 9 digits
     return bool(re.match(r'^\d{9}$|^\d{12}$', id_card))
 
 
+# Check if a field value already exists
 def check_duplicate_field(field_name, value, exclude_user_id=None):
-    """Check if a field value already exists"""
     if not value:
         return False
     
@@ -61,13 +56,13 @@ def check_duplicate_field(field_name, value, exclude_user_id=None):
     return users_collection.find_one(query) is not None
 
 
+# Get current UTC timestamp in ISO format
 def get_timestamp():
-    """Get current UTC timestamp in ISO format"""
     return datetime.datetime.utcnow().isoformat()
 
 
+# Format user data for API response
 def format_user_response(user, include_sensitive=False):
-    """Format user data for API response"""
     response = {
         'id': user['_id'],
         'username': user['username'],

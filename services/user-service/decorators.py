@@ -1,7 +1,5 @@
-"""
-User Service Decorators
-JWT token validation and role checks
-"""
+# User Service Decorators
+# JWT token validation and role checks
 from functools import wraps
 from flask import request, jsonify
 import jwt

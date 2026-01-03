@@ -1,4 +1,4 @@
-"""Report Service - Authentication Decorators"""
+# Report Service - Authentication Decorators
 from functools import wraps
 from flask import request, jsonify
 import jwt

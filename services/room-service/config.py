@@ -1,11 +1,8 @@
-"""
-Room Service Configuration
-"""
 import os
 
 
+# Application configuration
 class Config:
-    """Application configuration"""
     
     # MongoDB
     MONGO_URI = os.getenv('MONGO_URI', 'mongodb://localhost:27017/rooms_db')

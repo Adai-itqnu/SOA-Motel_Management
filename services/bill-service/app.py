@@ -1,14 +1,25 @@
-"""Bill Service - Main Application"""
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-import datetime
-import uuid
 import atexit
 
 from config import Config
 from model import bills_collection
 from decorators import token_required, admin_required, internal_api_required
 from service_registry import register_service, deregister_service
+from utils import (
+    generate_bill_id,
+    get_timestamp,
+    calculate_bill,
+    calculate_finalize_fees,
+    format_bill,
+    format_unpaid_bill,
+    create_bill_document,
+    validate_bill_data,
+    check_duplicate_bill,
+    get_user_id,
+    can_access_bill,
+    send_notification
+)
 
 
 app = Flask(__name__)
@@ -17,70 +28,20 @@ CORS(app)
 atexit.register(deregister_service)
 
 
-def get_timestamp():
-    return datetime.datetime.utcnow().isoformat()
-
-
-def generate_bill_id():
-    return f"BILL{uuid.uuid4().hex[:8].upper()}"
-
-
-def format_bill(bill):
-    return {
-        '_id': bill['_id'],
-        'contract_id': bill.get('contract_id', ''),
-        'room_id': bill.get('room_id', ''),
-        'user_id': bill.get('user_id', ''),
-        'month': bill.get('month', ''),
-        'room_fee': bill.get('room_fee', 0),
-        'electric_old': bill.get('electric_old', 0),
-        'electric_new': bill.get('electric_new', 0),
-        'electric_fee': bill.get('electric_fee', 0),
-        'water_old': bill.get('water_old', 0),
-        'water_new': bill.get('water_new', 0),
-        'water_fee': bill.get('water_fee', 0),
-        'other_fee': bill.get('other_fee', 0),
-        'total': bill.get('total', 0),
-        'status': bill.get('status', 'pending'),
-        'due_date': bill.get('due_date', ''),
-        'paid_at': bill.get('paid_at'),
-        'created_at': bill.get('created_at')
-    }
-
-
-def calculate_bill(data):
-    """Calculate bill amounts"""
-    electric_usage = data.get('electric_new', 0) - data.get('electric_old', 0)
-    water_usage = data.get('water_new', 0) - data.get('water_old', 0)
-    
-    electric_fee = electric_usage * data.get('electric_price', 3500)
-    water_fee = water_usage * data.get('water_price', 15000)
-    room_fee = data.get('room_fee', 0)
-    other_fee = data.get('other_fee', 0)
-    
-    total = room_fee + electric_fee + water_fee + other_fee
-    
-    return {
-        'electric_usage': electric_usage,
-        'electric_fee': electric_fee,
-        'water_usage': water_usage,
-        'water_fee': water_fee,
-        'room_fee': room_fee,
-        'other_fee': other_fee,
-        'total': total
-    }
-
+# ============== Health Check ==============
 
 @app.route('/health', methods=['GET'])
 def health():
     return jsonify({'status': 'healthy', 'service': Config.SERVICE_NAME}), 200
 
 
+# ============== Bill APIs ==============
+
 @app.route('/api/bills', methods=['GET'])
 @token_required
+# Get bills list (admin sees all, user sees own)
 def get_bills(current_user):
-    """Get bills list (admin sees all, user sees own)"""
-    user_id = current_user.get('user_id') or current_user.get('_id')
+    user_id = get_user_id(current_user)
     role = current_user.get('role', '')
     
     query = {} if role == 'admin' else {'user_id': user_id}
@@ -100,16 +61,13 @@ def get_bills(current_user):
 
 @app.route('/api/bills/<bill_id>', methods=['GET'])
 @token_required
+# Get single bill details
 def get_bill(current_user, bill_id):
-    """Get single bill details"""
     bill = bills_collection.find_one({'_id': bill_id})
     if not bill:
         return jsonify({'message': 'Hóa đơn không tồn tại!'}), 404
     
-    user_id = current_user.get('user_id') or current_user.get('_id')
-    role = current_user.get('role', '')
-    
-    if role != 'admin' and bill['user_id'] != user_id:
+    if not can_access_bill(current_user, bill):
         return jsonify({'message': 'Không có quyền xem hóa đơn này!'}), 403
     
     return jsonify(format_bill(bill)), 200
@@ -117,8 +75,8 @@ def get_bill(current_user, bill_id):
 
 @app.route('/api/bills/calculate', methods=['POST'])
 @token_required
+# Calculate bill preview
 def preview_bill(current_user):
-    """Calculate bill preview"""
     data = request.get_json() or {}
     return jsonify(calculate_bill(data)), 200
 
@@ -126,22 +84,17 @@ def preview_bill(current_user):
 @app.route('/api/bills', methods=['POST'])
 @token_required
 @admin_required
+# Create a new bill (admin only)
 def create_bill(current_user):
-    """Create a new bill (admin only)"""
     data = request.get_json() or {}
     
-    required = ['contract_id', 'room_id', 'user_id', 'month', 
-                'electric_old', 'electric_new', 'water_old', 'water_new', 'room_fee']
-    missing = [f for f in required if f not in data]
+    # Validate required fields
+    missing = validate_bill_data(data)
     if missing:
         return jsonify({'message': f"Thiếu trường: {', '.join(missing)}"}), 400
     
     # Check duplicate
-    existing = bills_collection.find_one({
-        'contract_id': data['contract_id'],
-        'month': data['month']
-    })
-    if existing:
+    if check_duplicate_bill(data['contract_id'], data['month']):
         return jsonify({'message': 'Hóa đơn tháng này đã tồn tại!'}), 400
     
     # Calculate amounts
@@ -156,32 +109,21 @@ def create_bill(current_user):
         'other_fee': float(data.get('other_fee', 0))
     })
     
-    timestamp = get_timestamp()
-    bill_id = generate_bill_id()
-    
-    new_bill = {
-        '_id': bill_id,
-        'contract_id': data['contract_id'],
-        'room_id': data['room_id'],
-        'user_id': data['user_id'],
-        'month': data['month'],
-        'room_fee': amounts['room_fee'],
-        'electric_old': float(data['electric_old']),
-        'electric_new': float(data['electric_new']),
-        'electric_fee': amounts['electric_fee'],
-        'water_old': float(data['water_old']),
-        'water_new': float(data['water_new']),
-        'water_fee': amounts['water_fee'],
-        'other_fee': amounts['other_fee'],
-        'total': amounts['total'],
-        'status': 'pending',
-        'due_date': data.get('due_date', ''),
-        'paid_at': None,
-        'created_at': timestamp
-    }
+    # Create bill document
+    new_bill = create_bill_document(data, amounts)
     
     try:
         bills_collection.insert_one(new_bill)
+        
+        # Send notification to user
+        send_notification(
+            new_bill['user_id'],
+            "Hóa đơn mới",
+            f"Bạn có hóa đơn mới tháng {new_bill['month']} cần thanh toán.",
+            "bill",
+            {"bill_id": new_bill['_id']}
+        )
+        
         return jsonify({
             'message': 'Tạo hóa đơn thành công!',
             'bill': format_bill(new_bill)
@@ -193,8 +135,8 @@ def create_bill(current_user):
 @app.route('/api/bills/<bill_id>', methods=['PUT'])
 @token_required
 @admin_required
+# Update bill (admin only)
 def update_bill(current_user, bill_id):
-    """Update bill (admin only)"""
     bill = bills_collection.find_one({'_id': bill_id})
     if not bill:
         return jsonify({'message': 'Hóa đơn không tồn tại!'}), 404
@@ -239,17 +181,13 @@ def update_bill(current_user, bill_id):
 
 @app.route('/api/bills/<bill_id>/pay', methods=['PUT'])
 @token_required
+# Mark bill as paid
 def pay_bill(current_user, bill_id):
-    """Mark bill as paid"""
     bill = bills_collection.find_one({'_id': bill_id})
     if not bill:
         return jsonify({'message': 'Hóa đơn không tồn tại!'}), 404
     
-    user_id = current_user.get('user_id') or current_user.get('_id')
-    role = current_user.get('role', '')
-    
-    # Only admin or bill owner can pay
-    if role != 'admin' and bill['user_id'] != user_id:
+    if not can_access_bill(current_user, bill):
         return jsonify({'message': 'Không có quyền!'}), 403
     
     if bill['status'] == 'paid':
@@ -268,8 +206,8 @@ def pay_bill(current_user, bill_id):
 
 @app.route('/api/bills/<bill_id>/status', methods=['PUT'])
 @internal_api_required
+# Internal endpoint for other services to update bill status
 def update_bill_status_internal(bill_id):
-    """Internal endpoint for other services (e.g., payment-service) to update bill status."""
     bill = bills_collection.find_one({'_id': bill_id})
     if not bill:
         return jsonify({'message': 'Hóa đơn không tồn tại!'}), 404
@@ -292,8 +230,8 @@ def update_bill_status_internal(bill_id):
 @app.route('/api/bills/<bill_id>', methods=['DELETE'])
 @token_required
 @admin_required
+# Delete bill (admin only)
 def delete_bill(current_user, bill_id):
-    """Delete bill (admin only)"""
     bill = bills_collection.find_one({'_id': bill_id})
     if not bill:
         return jsonify({'message': 'Hóa đơn không tồn tại!'}), 404
@@ -305,13 +243,13 @@ def delete_bill(current_user, bill_id):
     return jsonify({'message': 'Xóa thành công!'}), 200
 
 
-# ============== Admin: Manual trigger for bill generation ==============
+# ============== Admin APIs ==============
 
 @app.route('/api/bills/generate-monthly', methods=['POST'])
 @token_required
 @admin_required
+# Manually trigger monthly bill generation (admin only)
 def trigger_generate_bills(current_user):
-    """Manually trigger monthly bill generation (admin only)"""
     from scheduler import trigger_bill_generation
     try:
         trigger_bill_generation()
@@ -320,13 +258,11 @@ def trigger_generate_bills(current_user):
         return jsonify({'message': f'Lỗi: {str(e)}'}), 500
 
 
-# ============== Admin: Finalize draft bill (update meters -> pending) ==============
-
 @app.route('/api/bills/<bill_id>/finalize', methods=['PUT'])
 @token_required
 @admin_required
+# Update draft bill with meter readings and change to pending status
 def finalize_bill(current_user, bill_id):
-    """Update draft bill with meter readings and change to pending status"""
     bill = bills_collection.find_one({'_id': bill_id})
     if not bill:
         return jsonify({'message': 'Hóa đơn không tồn tại!'}), 404
@@ -342,29 +278,12 @@ def finalize_bill(current_user, bill_id):
     if electric_new is None or water_new is None:
         return jsonify({'message': 'Vui lòng nhập số điện và nước mới!'}), 400
     
-    # Calculate fees
-    electric_old = bill.get('electric_old', 0)
-    water_old = bill.get('water_old', 0)
-    electric_price = float(bill.get('electric_price', 3500))
-    water_price = float(bill.get('water_price', 15000))
-    room_fee = float(bill.get('room_fee', 0))
-    other_fee = float(data.get('other_fee', bill.get('other_fee', 0)))
-    
-    electric_usage = max(0, float(electric_new) - electric_old)
-    water_usage = max(0, float(water_new) - water_old)
-    
-    electric_fee = electric_usage * electric_price
-    water_fee = water_usage * water_price
-    total = room_fee + electric_fee + water_fee + other_fee
+    # Calculate fees using utility function
+    fees = calculate_finalize_fees(bill, electric_new, water_new, data.get('other_fee'))
     
     # Update bill
     update_data = {
-        'electric_new': float(electric_new),
-        'electric_fee': electric_fee,
-        'water_new': float(water_new),
-        'water_fee': water_fee,
-        'other_fee': other_fee,
-        'total': total,
+        **fees,
         'status': 'pending',
         'updated_at': get_timestamp()
     }
@@ -372,6 +291,16 @@ def finalize_bill(current_user, bill_id):
     bills_collection.update_one({'_id': bill_id}, {'$set': update_data})
     
     updated_bill = bills_collection.find_one({'_id': bill_id})
+    
+    # Send notification to user
+    send_notification(
+        updated_bill['user_id'],
+        "Hóa đơn điện nước",
+        f"Hóa đơn tháng {updated_bill['month']} đã được chốt số điện nước. Vui lòng kiểm tra và thanh toán.",
+        "bill",
+        {"bill_id": updated_bill['_id']}
+    )
+    
     return jsonify({
         'message': 'Cập nhật hóa đơn thành công! Đã chuyển sang trạng thái chờ thanh toán.',
         'bill': format_bill(updated_bill)
@@ -382,24 +311,18 @@ def finalize_bill(current_user, bill_id):
 
 @app.route('/internal/bills/unpaid', methods=['GET'])
 @internal_api_required
+# Get unpaid bills for notification reminders
 def internal_get_unpaid_bills():
-    """Get unpaid bills with due dates for notification reminders"""
     bills = list(bills_collection.find({
         'status': {'$in': ['pending', 'partial']}
     }))
     
     return jsonify({
-        'bills': [{
-            '_id': b['_id'],
-            'contract_id': b.get('contract_id', ''),
-            'room_id': b.get('room_id', ''),
-            'tenant_id': b.get('user_id', ''),
-            'total_amount': b.get('total', 0),
-            'due_date': b.get('due_date', ''),
-            'status': b.get('status', 'pending')
-        } for b in bills]
+        'bills': [format_unpaid_bill(b) for b in bills]
     }), 200
 
+
+# ============== Entry Point ==============
 
 if __name__ == '__main__':
     print(f"\n{'='*50}\n  {Config.SERVICE_NAME.upper()}\n  Port: {Config.SERVICE_PORT}\n{'='*50}\n")
@@ -411,4 +334,3 @@ if __name__ == '__main__':
     
     register_service()
     app.run(host='0.0.0.0', port=Config.SERVICE_PORT, debug=Config.DEBUG)
-

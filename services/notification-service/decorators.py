@@ -1,4 +1,4 @@
-"""Notification Service - Authentication Decorators"""
+# Notification Service - Authentication Decorators
 from functools import wraps
 from flask import request, jsonify
 import jwt

@@ -1,4 +1,4 @@
-"""Contract Service Configuration"""
+# Contract Service Configuration
 import os
 
 class Config:

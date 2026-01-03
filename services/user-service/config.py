@@ -1,6 +1,4 @@
-"""
-User Service Configuration
-"""
+# User Service Configuration
 import os
 
 

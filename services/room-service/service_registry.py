@@ -1,6 +1,4 @@
-"""
-Room Service - Consul Service Registry
-"""
+# Room Service - Consul Service Registry
 import socket
 import os
 import time
@@ -8,15 +6,15 @@ import consul
 from config import Config
 
 
+# Consul service registry handler
 class ServiceRegistry:
-    """Consul service registry handler"""
     
     def __init__(self):
         self.consul_client = None
         self.service_id = None
     
+    # Wait for Consul to be ready
     def _wait_for_consul(self, max_retries=10, retry_delay=2):
-        """Wait for Consul to be ready"""
         for attempt in range(max_retries):
             try:
                 self.consul_client = consul.Consul(
@@ -35,15 +33,15 @@ class ServiceRegistry:
                     return False
         return False
     
+    # Get the service address for registration
     def _get_service_address(self):
-        """Get the service address for registration"""
         return os.getenv('SERVICE_ADDRESS') or Config.SERVICE_NAME
 
     def _get_service_id(self):
         return os.getenv('SERVICE_ID') or f"{Config.SERVICE_NAME}-{Config.SERVICE_PORT}"
     
+    # Register service with Consul
     def register(self):
-        """Register service with Consul"""
         if not self._wait_for_consul():
             return False
         
@@ -76,8 +74,8 @@ class ServiceRegistry:
             print(f"[CONSUL] ✗ Registration failed: {e}")
             return False
     
+    # Deregister service from Consul
     def deregister(self):
-        """Deregister service from Consul"""
         if self.consul_client and self.service_id:
             try:
                 self.consul_client.agent.service.deregister(self.service_id)

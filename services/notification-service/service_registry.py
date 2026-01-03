@@ -1,4 +1,4 @@
-"""Notification Service - Consul Registry"""
+# Notification Service - Consul Registry
 import socket, os, time, consul
 from config import Config
 

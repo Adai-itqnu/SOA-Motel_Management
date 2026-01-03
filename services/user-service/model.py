@@ -1,7 +1,5 @@
-"""
-User Service Database Model
-Uses same database as auth-service
-"""
+# User Service Database Model
+# Uses same database as auth-service
 from pymongo import MongoClient, ASCENDING
 from config import Config
 

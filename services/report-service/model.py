@@ -1,4 +1,4 @@
-"""Report Service Database Models"""
+# Report Service Database Models
 from pymongo import MongoClient, ASCENDING, DESCENDING
 from config import Config
 

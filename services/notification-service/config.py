@@ -1,4 +1,4 @@
-"""Notification Service Configuration"""
+# Notification Service Configuration
 import os
 
 class Config:

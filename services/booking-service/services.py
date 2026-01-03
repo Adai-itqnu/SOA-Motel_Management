@@ -1,12 +1,11 @@
-"""
-Booking Service - External Service Calls
-"""
+# Booking Service - External Service Calls
 import requests
 from config import Config
 
 
 def get_service_url(service_name):
-    """Get service URL from Consul"""
+# Get service URL from Consul
+    
     try:
         consul_url = f"http://{Config.CONSUL_HOST}:{Config.CONSUL_PORT}/v1/catalog/service/{service_name}"
         response = requests.get(consul_url, timeout=5)
@@ -17,7 +16,7 @@ def get_service_url(service_name):
         # Fallback
         ports = {
             'room-service': 5002,
-            'tenant-service': 5003,
+            'user-service': 5003,
             'contract-service': 5006,
             'notification-service': 5010
         }
@@ -28,7 +27,8 @@ def get_service_url(service_name):
 
 
 def _prepare_auth_header(token):
-    """Prepare authorization header"""
+# Prepare authorization header
+    
     if not token:
         return {}
     if not token.startswith('Bearer ') and not token.startswith('bearer '):
@@ -37,7 +37,8 @@ def _prepare_auth_header(token):
 
 
 def check_room_availability(room_id, token):
-    """Check if room exists and get its details"""
+# Check if room exists and get its details
+    
     try:
         url = get_service_url('room-service')
         if not url:
@@ -56,16 +57,17 @@ def check_room_availability(room_id, token):
         return None, f"Lỗi kết nối Room Service: {str(e)}"
 
 
-def update_room_status(room_id, status, tenant_id=None):
-    """Update room status via internal API"""
+def update_room_status(room_id, status, user_id=None):
+# Update room status via internal API
+    
     try:
         url = get_service_url('room-service')
         if not url:
             return False
         
         payload = {'status': status}
-        if tenant_id:
-            payload['tenant_id'] = str(tenant_id)
+        if user_id:
+            payload['user_id'] = str(user_id)
         
         response = requests.put(
             f"{url}/internal/rooms/{room_id}/status",
@@ -79,15 +81,16 @@ def update_room_status(room_id, status, tenant_id=None):
         return False
 
 
-def get_tenant_info(tenant_id, token):
-    """Get tenant information"""
+def get_user_info(user_id, token):
+# Get user information
+    
     try:
-        url = get_service_url('tenant-service')
+        url = get_service_url('user-service')
         if not url:
             return None
         
         response = requests.get(
-            f"{url}/api/tenants/{tenant_id}",
+            f"{url}/api/users/{user_id}",
             headers=_prepare_auth_header(token),
             timeout=5
         )
@@ -96,12 +99,13 @@ def get_tenant_info(tenant_id, token):
             return response.json()
         return None
     except Exception as e:
-        print(f"Error getting tenant info: {e}")
+        print(f"Error getting user info: {e}")
         return None
 
 
 def create_contract(contract_data, token=None):
-    """Create contract via contract-service"""
+# Create contract via contract-service
+    
     try:
         url = get_service_url('contract-service')
         if not url:
@@ -128,7 +132,8 @@ def create_contract(contract_data, token=None):
 
 
 def send_notification(user_id, title, message, notification_type, metadata=None):
-    """Send notification via notification-service"""
+# Send notification via notification-service
+    
     try:
         url = get_service_url('notification-service')
         if not url:

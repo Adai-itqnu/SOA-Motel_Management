@@ -484,61 +484,94 @@
 
         const roomId = params.get("room_id");
 
+        // Clean URL
         window.history.replaceState({}, "", "/user/home.html");
 
         const notice = document.getElementById("vnpayNotice");
-        if (notice) {
-          const clsMap = {
-            success: "bg-green-50 border-green-200 text-green-800",
-            warning: "bg-amber-50 border-amber-200 text-amber-800",
-            error: "bg-red-50 border-red-200 text-red-800",
-          };
+        if (!notice) return;
 
-          const base = roomId ? `Phòng: ${roomId}` : "";
-          let cfg = { title: "Thanh toán", msg: "", cls: clsMap.success };
-          if (vnpayStatus === "success")
+        let cfg = { 
+            title: "Thanh toán", 
+            msg: "", 
+            icon: "check_circle",
+            color: "text-green-500",
+            bg: "bg-white",
+            border: "border-l-4 border-green-500"
+        };
+
+        if (vnpayStatus === "success") {
             cfg = {
-              title: "Thanh toán thành công",
-              msg: "Giao dịch VNPay đã được xác nhận. Tiền cọc phòng đã cập nhật.",
-              cls: clsMap.success,
+              title: "Thanh toán thành công!",
+              msg: "Giao dịch đã được xác nhận. Phòng đã được giữ cho bạn.",
+              icon: "check_circle",
+              color: "text-green-500",
+              bg: "bg-white",
+              border: "border-l-4 border-green-500"
             };
-          else if (vnpayStatus === "cancel")
+        } else if (vnpayStatus === "cancel") {
             cfg = {
-              title: "Đã hủy thanh toán",
-              msg: "Bạn đã hủy thanh toán. Phòng vẫn còn trống để đặt lại.",
-              cls: clsMap.warning,
+              title: "Thanh toán bị hủy",
+              msg: "Bạn đã hủy giao dịch thanh toán.",
+              icon: "cancel",
+              color: "text-amber-500",
+              bg: "bg-white",
+              border: "border-l-4 border-amber-500"
             };
-          else if (vnpayStatus === "pending")
+        } else if (vnpayStatus === "pending") {
             cfg = {
               title: "Đang xử lý",
-              msg: "Thanh toán đang được xác minh. Vui lòng đợi thêm.",
-              cls: clsMap.warning,
+              msg: "Giao dịch đang chờ ngân hàng xác nhận...",
+              icon: "hourglass_top",
+              color: "text-blue-500",
+              bg: "bg-white",
+              border: "border-l-4 border-blue-500"
             };
-          else
-            cfg = {
+        } else {
+             cfg = {
               title: "Thanh toán thất bại",
-              msg: "Có lỗi khi thanh toán. Vui lòng thử lại sau.",
-              cls: clsMap.error,
+              msg: "Có lỗi xảy ra trong quá trình thanh toán.",
+              icon: "error",
+              color: "text-red-500",
+              bg: "bg-white",
+              border: "border-l-4 border-red-500"
             };
-
-          notice.className = `rounded-2xl border p-4 shadow-lg ${cfg.cls}`;
-          notice.innerHTML = `
-                        <div class=\"flex items-start gap-3\">\n                        <span class=\"material-symbols-outlined mt-0.5\">${
-                          vnpayStatus === "success"
-                            ? "check_circle"
-                            : vnpayStatus === "pending"
-                            ? "hourglass_top"
-                            : "error"
-                        }</span>\n                        <div class=\"flex-1\">\n                            <p class=\"font-bold text-sm\">${
-            cfg.title
-          }</p>\n                            <p class=\"text-xs mt-1\">${
-            cfg.msg
-          }</p>\n                            ${
-            base ? `<p class=\"text-[11px] mt-1 opacity-80\">${base}</p>` : ""
-          }\n                        </div>\n                        <button class=\"text-sm font-semibold\" onclick=\"this.parentElement.parentElement.classList.add('hidden')\">Đóng</button>\n                    </div>`;
-          notice.classList.remove("hidden");
         }
+
+        notice.className = `fixed top-24 right-0 z-50 transform transition-all duration-500 translate-x-full`;
+        notice.innerHTML = `
+            <div class="m-4 max-w-sm w-full shadow-2xl rounded-lg overflow-hidden ${cfg.bg} pointer-events-auto ring-1 ring-black ring-opacity-5 ${cfg.border} flex p-4 animate-in slide-in-from-right duration-500">
+                <div class="flex-shrink-0">
+                    <span class="material-symbols-outlined ${cfg.color} text-3xl">${cfg.icon}</span>
+                </div>
+                <div class="ml-3 w-0 flex-1 pt-0.5">
+                    <p class="text-sm font-bold text-gray-900">${cfg.title}</p>
+                    <p class="mt-1 text-sm text-gray-500 leading-relaxed">${cfg.msg}</p>
+                    ${roomId ? `<p class="mt-1 text-xs text-gray-400 font-mono">Room: ${roomId}</p>` : ''}
+                </div>
+                <div class="ml-4 flex-shrink-0 flex">
+                    <button onclick="this.closest('#vnpayNotice').classList.add('translate-x-full', 'opacity-0')" class="bg-white rounded-md inline-flex text-gray-400 hover:text-gray-500 focus:outline-none">
+                        <span class="sr-only">Close</span>
+                        <span class="material-symbols-outlined">close</span>
+                    </button>
+                </div>
+            </div>
+        `;
+        notice.classList.remove("hidden");
+        
+        // Slide in animation
+        setTimeout(() => {
+            notice.classList.remove("translate-x-full");
+        }, 100);
+
+        // Auto close after 6s
+        setTimeout(() => {
+            notice.classList.add("translate-x-full", "opacity-0");
+             setTimeout(() => {
+                notice.classList.add("hidden");
+            }, 500);
+        }, 6000);
       }
+
 
       function initFilters() {
         const chips = document.querySelectorAll("#filterChips .chip");

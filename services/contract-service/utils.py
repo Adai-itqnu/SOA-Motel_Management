@@ -1,17 +1,136 @@
-"""Contract Service - Utility Functions"""
+# Contract Service - Utility Functions
 import datetime
 import uuid
 from bson import ObjectId
 from model import contracts_collection
 
+
+# ============== Timestamp & ID ==============
+
 def get_timestamp():
     return datetime.datetime.utcnow().isoformat()
 
+
 def generate_contract_id():
     while True:
-        cid = f"C{uuid.uuid4().hex[:8].upper()}"
+        cid = f"CTR{uuid.uuid4().hex[:8].upper()}"
         if not contracts_collection.find_one({'_id': cid}):
             return cid
+
+
+# ============== User Helpers ==============
+
+def get_user_id(current_user):
+    return current_user.get('user_id') or current_user.get('_id')
+
+
+def can_access_contract(current_user, contract):
+    user_id = get_user_id(current_user)
+    role = current_user.get('role', '')
+    return role == 'admin' or contract['user_id'] == user_id
+
+
+# ============== Formatting ==============
+
+def format_contract(contract):
+    return {
+        '_id': contract['_id'],
+        'room_id': contract.get('room_id', ''),
+        'user_id': contract.get('user_id', ''),
+        'start_date': contract.get('start_date', ''),
+        'end_date': contract.get('end_date', ''),
+        'monthly_rent': contract.get('monthly_rent', 0),
+        'deposit_amount': contract.get('deposit_amount', 0),
+        'deposit_status': contract.get('deposit_status', 'pending'),
+        'deposit_payment_id': contract.get('deposit_payment_id'),
+        'payment_day': contract.get('payment_day', 5),
+        'status': contract.get('status', 'active'),
+        'notes': contract.get('notes', ''),
+        'created_at': contract.get('created_at'),
+        'updated_at': contract.get('updated_at')
+    }
+
+
+# ============== Validation ==============
+
+def validate_contract_dates(start_date, end_date):
+    try:
+        start = datetime.datetime.fromisoformat(start_date)
+        end = datetime.datetime.fromisoformat(end_date)
+        if end <= start:
+            return None, None, 'Ngày kết thúc phải sau ngày bắt đầu!'
+        return start, end, None
+    except:
+        return None, None, 'Định dạng ngày không hợp lệ (YYYY-MM-DD)!'
+
+
+def check_existing_active_contract(user_id):
+    return contracts_collection.find_one({
+        'user_id': user_id,
+        'status': 'active'
+    })
+
+
+def check_contract_exists(room_id, user_id):
+    return contracts_collection.find_one({
+        'room_id': room_id,
+        'user_id': str(user_id),
+        'status': 'active'
+    })
+
+
+# ============== Document Creation ==============
+
+def create_contract_document(data, user_id):
+    timestamp = get_timestamp()
+    return {
+        '_id': generate_contract_id(),
+        'room_id': data['room_id'],
+        'user_id': str(user_id),
+        'start_date': data['start_date'],
+        'end_date': data['end_date'],
+        'monthly_rent': float(data['monthly_rent']),
+        'deposit_amount': float(data.get('deposit_amount', 0)),
+        'deposit_status': data.get('deposit_status', 'paid'),
+        'payment_day': int(data.get('payment_day', 5)),
+        'status': 'active',
+        'notes': data.get('notes', ''),
+        'created_at': timestamp,
+        'updated_at': timestamp
+    }
+
+
+def create_auto_contract_document(room_id, user_id, room_data, payment_id, check_in_date=None):
+    if check_in_date:
+        try:
+            start = datetime.datetime.fromisoformat(check_in_date)
+        except:
+            start = datetime.datetime.utcnow()
+    else:
+        start = datetime.datetime.utcnow()
+    
+    end = start + datetime.timedelta(days=365)
+    timestamp = get_timestamp()
+    
+    return {
+        '_id': generate_contract_id(),
+        'room_id': room_id,
+        'user_id': str(user_id),
+        'start_date': start.strftime('%Y-%m-%d'),
+        'end_date': end.strftime('%Y-%m-%d'),
+        'monthly_rent': float(room_data.get('price', 0)),
+        'deposit_amount': float(room_data.get('deposit', 0)),
+        'deposit_status': 'paid',
+        'deposit_payment_id': payment_id,
+        'payment_day': 5,
+        'status': 'active',
+        'notes': 'Hợp đồng tự động tạo sau thanh toán cọc thành công',
+        'created_at': timestamp,
+        'updated_at': timestamp,
+    }
+
+
+# ============== ObjectId Helpers ==============
 
 def to_object_id(id_value):
     if isinstance(id_value, ObjectId):
@@ -19,36 +138,3 @@ def to_object_id(id_value):
     if isinstance(id_value, str) and ObjectId.is_valid(id_value):
         return ObjectId(id_value)
     return id_value
-
-def format_contract(contract, tenant_info=None):
-    result = {}
-    for k, v in contract.items():
-        if isinstance(v, ObjectId):
-            result[k] = str(v)
-        elif isinstance(v, datetime.datetime):
-            result[k] = v.isoformat()
-        else:
-            result[k] = v
-    result['id'] = result.get('_id', '')
-    result['tenant_name'] = tenant_info.get('name', '') if tenant_info else ''
-    result['tenant_phone'] = tenant_info.get('phone', '') if tenant_info else ''
-    return result
-
-def create_contract_doc(data, tenant_id):
-    ts = get_timestamp()
-    return {
-        '_id': generate_contract_id(),
-        'tenant_id': tenant_id,
-        'room_id': data['room_id'],
-        'start_date': data['start_date'],
-        'end_date': data['end_date'],
-        'monthly_rent': float(data['monthly_rent']),
-        'deposit': float(data['deposit']),
-        'electric_price': float(data.get('electric_price', 3500)),
-        'water_price': float(data.get('water_price', 20000)),
-        'payment_day': int(data.get('payment_day', 5)),
-        'notes': data.get('notes', ''),
-        'status': 'active',
-        'created_at': ts,
-        'updated_at': ts
-    }

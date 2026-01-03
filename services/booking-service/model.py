@@ -1,6 +1,4 @@
-"""
-Booking Service Database Models
-"""
+# Booking Service Database Models
 from pymongo import MongoClient, ASCENDING, DESCENDING
 from config import Config
 

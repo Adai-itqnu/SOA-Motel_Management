@@ -1,12 +1,10 @@
-"""
-Auth Service Configuration
-Centralized configuration management using environment variables
-"""
+# Auth Service Configuration
+# Centralized configuration management using environment variables
 import os
 
 
+# Application configuration class
 class Config:
-    """Application configuration class"""
     
     # MongoDB
     MONGO_URI = os.getenv('MONGO_URI', 'mongodb://localhost:27017/users_db')

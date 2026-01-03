@@ -1,4 +1,4 @@
-"""Notification Service - Main Application"""
+# Notification Service - Main Application
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import datetime
@@ -34,7 +34,8 @@ def health():
 @token_required
 @admin_required
 def send_notification(current_user):
-    """Send notification to user(s) - Admin only"""
+# Send notification to user(s) - Admin only
+    
     data = request.get_json() or {}
     
     # Validate required fields
@@ -92,7 +93,8 @@ def send_notification(current_user):
 @token_required
 @admin_required
 def get_all_notifications(current_user):
-    """Get all notifications - Admin only"""
+# Get all notifications - Admin only
+    
     query = {}
     
     user_id = request.args.get('user_id')
@@ -120,7 +122,8 @@ def get_all_notifications(current_user):
 @app.route('/api/notifications', methods=['POST'])
 @internal_api_required
 def create_notification():
-    """Create notification (internal API)"""
+# Create notification (internal API)
+    
     data = request.get_json() or {}
     
     required = ['user_id', 'title', 'message', 'type']
@@ -140,7 +143,8 @@ def create_notification():
 @app.route('/api/notifications/welcome', methods=['POST'])
 @internal_api_required
 def create_welcome_notification():
-    """Create welcome notification for new user"""
+# Create welcome notification for new user
+    
     data = request.get_json() or {}
     
     user_id = data.get('user_id')
@@ -163,12 +167,103 @@ def create_welcome_notification():
     }), 201
 
 
+# ============== User API: Report Issue ==============
+
+@app.route('/api/notifications/report-issue', methods=['POST'])
+@token_required
+def report_issue(current_user):
+# User reports an issue - creates notification for admin
+    
+    data = request.get_json() or {}
+    
+    issue_type = data.get('issue_type')
+    issue_label = data.get('issue_label', issue_type)
+    content = data.get('content', '')
+    room_name = data.get('room_name', 'Không xác định')
+    room_id = data.get('room_id', '')
+    user_name = data.get('user_name', 'Người dùng')
+    user_id = data.get('user_id') or get_user_id(current_user)
+    
+    if not issue_type or not content:
+        return jsonify({'message': 'Vui lòng cung cấp loại sự cố và mô tả!'}), 400
+    
+    # Create notification for admin (user_id = 'admin' for admin notifications)
+    notification = create_notification_document({
+        'user_id': 'admin',
+        'title': f'🚨 Báo cáo sự cố: {issue_label}',
+        'message': f'Phòng {room_name} - {user_name}: {content}',
+        'type': 'incident_report',
+        'metadata': {
+            'persistent': True,
+            'issue_type': issue_type,
+            'room_id': room_id,
+            'room_name': room_name,
+            'reporter_id': str(user_id),
+            'reporter_name': user_name,
+            'content': content
+        }
+    })
+    
+    return jsonify({
+        'message': 'Đã gửi báo cáo sự cố!',
+        'notification': notification
+    }), 201
+
+
+# ============== Admin API: Unread Count ==============
+
+@app.route('/api/notifications/admin/unread', methods=['GET'])
+@token_required
+@admin_required
+def get_admin_unread_count(current_user):
+# Get unread notification count for admin
+    
+    count = notifications_collection.count_documents({
+        'user_id': 'admin',
+        'status': 'unread'
+    })
+    
+    # Get recent unread notifications (limit 5)
+    recent = list(notifications_collection.find({
+        'user_id': 'admin',
+        'status': 'unread'
+    }).sort('created_at', -1).limit(5))
+    
+    for n in recent:
+        format_notification(n)
+    
+    return jsonify({
+        'unread_count': count,
+        'recent': recent
+    }), 200
+
+
+# ============== Admin API: Mark Admin Notification Read ==============
+
+@app.route('/api/notifications/admin/<notification_id>/read', methods=['PUT'])
+@token_required
+@admin_required
+def mark_admin_notification_read(current_user, notification_id):
+# Mark admin notification as read
+    
+    result = notifications_collection.update_one(
+        {'_id': notification_id, 'user_id': 'admin'},
+        {'$set': {'status': 'read', 'read_at': get_timestamp()}}
+    )
+    
+    if result.matched_count == 0:
+        return jsonify({'message': 'Thông báo không tồn tại!'}), 404
+    
+    return jsonify({'message': 'Đã đánh dấu đã đọc.'}), 200
+
+
 # ============== User APIs ==============
 
 @app.route('/api/notifications', methods=['GET'])
 @token_required
 def get_notifications(current_user):
-    """Get user's notifications"""
+# Get user's notifications
+    
     user_id = get_user_id(current_user)
     status_filter = request.args.get('status')
     
@@ -189,7 +284,8 @@ def get_notifications(current_user):
 @app.route('/api/notifications/<notification_id>/read', methods=['PUT'])
 @token_required
 def mark_as_read(current_user, notification_id):
-    """Mark notification as read"""
+# Mark notification as read
+    
     user_id = get_user_id(current_user)
     
     notification = notifications_collection.find_one({'_id': notification_id})
@@ -206,7 +302,8 @@ def mark_as_read(current_user, notification_id):
 @app.route('/api/notifications/read', methods=['PUT'])
 @token_required
 def mark_all_as_read(current_user):
-    """Mark all notifications as read"""
+# Mark all notifications as read
+    
     user_id = get_user_id(current_user)
     
     result = notifications_collection.update_many(
@@ -224,7 +321,8 @@ def mark_all_as_read(current_user):
 @app.route('/api/notifications/tasks/rent-reminders', methods=['POST'])
 @internal_api_required
 def run_rent_reminders():
-    """Generate rent reminder notifications"""
+# Generate rent reminder notifications
+    
     bills = fetch_unpaid_bills()
     today = datetime.date.today()
     created = []
@@ -260,7 +358,7 @@ def run_rent_reminders():
         
         # Create notification
         notification = create_notification_document({
-            'user_id': bill.get('tenant_id'),
+            'user_id': bill.get('user_id'),
             'title': 'Nhắc nhở thanh toán tiền nhà',
             'message': message,
             'type': notif_type,

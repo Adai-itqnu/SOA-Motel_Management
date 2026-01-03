@@ -158,9 +158,9 @@ const AdminLayout = {
       .join("");
 
     return `
-            <aside id="adminSidebar" class="fixed left-0 top-0 w-64 h-full bg-sidebar text-white z-50">
-                <!-- Logo -->
-                <div class="p-6 border-b border-white/10">
+            <aside id="adminSidebar" class="fixed left-0 top-0 w-64 h-full bg-sidebar text-white z-50 flex flex-col">
+                <!-- Logo (fixed at top) -->
+                <div class="p-6 border-b border-white/10 flex-shrink-0">
                     <div class="flex items-center gap-3">
                         <div class="w-10 h-10 bg-gradient-to-r from-indigo-500 to-purple-600 rounded-xl flex items-center justify-center">
                             <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -174,13 +174,13 @@ const AdminLayout = {
                     </div>
                 </div>
 
-                <!-- Navigation -->
-                <nav class="p-4 space-y-2">
+                <!-- Navigation (scrollable) -->
+                <nav class="flex-1 p-4 space-y-2 overflow-y-auto">
                     ${menuHTML}
                 </nav>
 
-                <!-- User & Logout -->
-                <div class="absolute bottom-0 left-0 right-0 p-4 border-t border-white/10">
+                <!-- User & Logout (fixed at bottom) -->
+                <div class="flex-shrink-0 p-4 border-t border-white/10">
                     <div class="flex items-center gap-3 mb-3 px-2">
                         <div class="w-8 h-8 bg-gradient-to-r from-indigo-500 to-purple-600 rounded-full flex items-center justify-center text-white text-sm font-bold">
                             ${userName.charAt(0).toUpperCase()}
@@ -237,6 +237,13 @@ const AdminLayout = {
     if (main && !main.classList.contains("ml-64")) {
       main.classList.add("ml-64");
     }
+    
+    // Load admin notifications after layout is loaded
+    setTimeout(() => {
+      loadAdminNotifications();
+      // Auto-refresh every 30 seconds
+      setInterval(loadAdminNotifications, 30000);
+    }, 500);
   },
 
   // Logout function
@@ -244,6 +251,132 @@ const AdminLayout = {
     Auth.logout();
   },
 };
+
+// ============== Admin Notification Functions ==============
+
+let notificationDropdownOpen = false;
+
+function toggleAdminNotifications() {
+  const dropdown = document.getElementById("notificationDropdown");
+  if (!dropdown) return;
+  
+  notificationDropdownOpen = !notificationDropdownOpen;
+  
+  if (notificationDropdownOpen) {
+    dropdown.classList.remove("hidden");
+    // Refresh notifications when opening
+    loadAdminNotifications();
+  } else {
+    dropdown.classList.add("hidden");
+  }
+}
+
+// Close dropdown when clicking outside
+document.addEventListener("click", (e) => {
+  const bell = document.getElementById("notificationBell");
+  const dropdown = document.getElementById("notificationDropdown");
+  
+  if (bell && dropdown && !bell.contains(e.target)) {
+    dropdown.classList.add("hidden");
+    notificationDropdownOpen = false;
+  }
+});
+
+async function loadAdminNotifications() {
+  try {
+    const res = await API.get("/notifications/admin/unread");
+    if (!res.ok) return;
+    
+    const { unread_count, recent } = res.data;
+    
+    // Update badge
+    const badge = document.getElementById("notificationBadge");
+    if (badge) {
+      if (unread_count > 0) {
+        badge.textContent = unread_count > 99 ? "99+" : unread_count;
+        badge.classList.remove("hidden");
+      } else {
+        badge.classList.add("hidden");
+      }
+    }
+    
+    // Update dropdown list
+    const list = document.getElementById("notificationList");
+    if (list && recent) {
+      if (recent.length === 0) {
+        list.innerHTML = `<div class="px-4 py-8 text-center text-gray-400 text-sm">Không có thông báo mới</div>`;
+      } else {
+        list.innerHTML = recent.map(n => {
+          const typeIcons = {
+            incident_report: "🚨",
+            payment_success: "💰",
+            deposit_paid: "✅",
+            bill_paid: "💵",
+            default: "🔔"
+          };
+          const icon = typeIcons[n.type] || typeIcons.default;
+          const timeAgo = formatTimeAgo(n.created_at);
+          
+          return `
+            <div class="px-4 py-3 hover:bg-gray-50 cursor-pointer border-b border-gray-50 transition" onclick="markAdminNotificationRead('${n._id}')">
+              <div class="flex gap-3">
+                <span class="text-xl">${icon}</span>
+                <div class="flex-1 min-w-0">
+                  <p class="font-semibold text-gray-800 text-sm truncate">${n.title}</p>
+                  <p class="text-gray-500 text-xs truncate">${n.message}</p>
+                  <p class="text-gray-400 text-xs mt-1">${timeAgo}</p>
+                </div>
+              </div>
+            </div>
+          `;
+        }).join("");
+      }
+    }
+  } catch (error) {
+    console.error("Load admin notifications error:", error);
+  }
+}
+
+async function markAdminNotificationRead(notificationId) {
+  try {
+    await API.put(`/notifications/admin/${notificationId}/read`);
+    loadAdminNotifications();
+  } catch (error) {
+    console.error("Mark notification read error:", error);
+  }
+}
+
+async function markAllAdminNotificationsRead() {
+  try {
+    // Mark each recent notification as read
+    const res = await API.get("/notifications/admin/unread");
+    if (res.ok && res.data.recent) {
+      for (const n of res.data.recent) {
+        await API.put(`/notifications/admin/${n._id}/read`);
+      }
+      loadAdminNotifications();
+    }
+  } catch (error) {
+    console.error("Mark all notifications read error:", error);
+  }
+}
+
+function formatTimeAgo(dateStr) {
+  if (!dateStr) return "";
+  try {
+    const date = new Date(dateStr);
+    const now = new Date();
+    const diff = Math.floor((now - date) / 1000);
+    
+    if (diff < 60) return "Vừa xong";
+    if (diff < 3600) return `${Math.floor(diff / 60)} phút trước`;
+    if (diff < 86400) return `${Math.floor(diff / 3600)} giờ trước`;
+    if (diff < 604800) return `${Math.floor(diff / 86400)} ngày trước`;
+    return date.toLocaleDateString("vi-VN");
+  } catch {
+    return dateStr;
+  }
+}
 
 // Don't auto-init - let each page control when to init
 // This prevents double auth check issues

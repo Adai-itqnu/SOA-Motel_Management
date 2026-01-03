@@ -1,7 +1,5 @@
-"""
-Room Service - Main Application
-Handles room management operations
-"""
+# Room Service - Main Application
+# Handles room management operations
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import atexit
@@ -31,8 +29,8 @@ atexit.register(deregister_service)
 # ============== Health Check ==============
 
 @app.route('/health', methods=['GET'])
+# Health check endpoint
 def health_check():
-    """Health check endpoint"""
     return jsonify({
         'status': 'healthy',
         'service': Config.SERVICE_NAME,
@@ -43,8 +41,8 @@ def health_check():
 # ============== Public APIs ==============
 
 @app.route('/api/rooms', methods=['GET'])
+# Get list of rooms with optional filters
 def get_rooms():
-    """Get list of rooms with optional filters"""
     status_filter = request.args.get('status')
     search = request.args.get('search')
     
@@ -65,8 +63,8 @@ def get_rooms():
 
 
 @app.route('/api/rooms/<room_id>', methods=['GET'])
+# Get room details by ID
 def get_room(room_id):
-    """Get room details by ID"""
     room = rooms_collection.find_one({'_id': room_id})
     
     if not room:
@@ -76,8 +74,8 @@ def get_room(room_id):
 
 
 @app.route('/api/rooms/available', methods=['GET'])
+# Get list of available rooms (for users)
 def get_available_rooms():
-    """Get list of available rooms (for users)"""
     rooms = list(rooms_collection.find({
         'status': Config.STATUS_AVAILABLE
     }).sort('price', 1))
@@ -90,8 +88,8 @@ def get_available_rooms():
 
 
 @app.route('/api/rooms/public/<room_id>', methods=['GET'])
+# Get room detail for user UI with full images but no sensitive fields
 def get_public_room_detail(room_id):
-    """Get room detail for user UI with full images but no sensitive fields."""
     room = rooms_collection.find_one({'_id': room_id})
     if not room:
         return jsonify({'message': 'Phòng không tồn tại!'}), 404
@@ -109,8 +107,8 @@ def get_public_room_detail(room_id):
 @app.route('/api/rooms', methods=['POST'])
 @token_required
 @admin_required
+# Create a new room (admin only)
 def create_room(current_user):
-    """Create a new room (admin only)"""
     data = request.get_json() or {}
     
     # Validate required fields
@@ -167,7 +165,7 @@ def create_room(current_user):
         'images': normalized_images,
         'status': Config.STATUS_AVAILABLE,
         'current_contract_id': None,
-        'reserved_by_tenant_id': None,
+        'reserved_by_user_id': None,
         'reserved_payment_id': None,
         'reservation_status': None,
         'reserved_at': None,
@@ -188,8 +186,8 @@ def create_room(current_user):
 @app.route('/api/rooms/<room_id>', methods=['PUT'])
 @token_required
 @admin_required
+# Update room information (admin only)
 def update_room(current_user, room_id):
-    """Update room information (admin only)"""
     data = request.get_json() or {}
     
     room = rooms_collection.find_one({'_id': room_id})
@@ -262,8 +260,8 @@ def update_room(current_user, room_id):
 @app.route('/api/rooms/<room_id>', methods=['DELETE'])
 @token_required
 @admin_required
+# Delete a room (admin only)
 def delete_room(current_user, room_id):
-    """Delete a room (admin only)"""
     room = rooms_collection.find_one({'_id': room_id})
     
     if not room:
@@ -281,8 +279,8 @@ def delete_room(current_user, room_id):
 
 @app.route('/api/rooms/stats', methods=['GET'])
 @token_required
+# Get room statistics
 def get_room_stats(current_user):
-    """Get room statistics"""
     total = rooms_collection.count_documents({})
     available = rooms_collection.count_documents({'status': Config.STATUS_AVAILABLE})
     occupied = rooms_collection.count_documents({'status': Config.STATUS_OCCUPIED})
@@ -305,8 +303,8 @@ def get_room_stats(current_user):
 
 @app.route('/internal/rooms/<room_id>/status', methods=['PUT'])
 @internal_api_required
+# Internal API for other services to update room status
 def internal_update_room_status(room_id):
-    """Internal API for other services to update room status"""
     data = request.get_json() or {}
     new_status = data.get('status')
     
@@ -334,8 +332,8 @@ def internal_update_room_status(room_id):
 
 @app.route('/api/rooms/my-reservations', methods=['GET'])
 @token_required
+# Get rooms reserved by current user
 def get_my_reservations(current_user):
-    """Get rooms reserved by current user"""
     user_id = current_user.get('user_id') or current_user.get('_id')
     if not user_id:
         return jsonify({'message': 'Không tìm thấy user_id!'}), 400
@@ -344,7 +342,7 @@ def get_my_reservations(current_user):
         rooms_collection.find(
             {
                 'status': Config.STATUS_RESERVED,
-                'reserved_by_tenant_id': str(user_id),
+                'reserved_by_user_id': str(user_id),
             }
         ).sort('updated_at', -1)
     )
@@ -354,13 +352,13 @@ def get_my_reservations(current_user):
 
 @app.route('/internal/rooms/<room_id>/reservation/hold', methods=['PUT'])
 @internal_api_required
+# Hold a room for reservation while user is paying deposit (internal)
 def internal_hold_room_reservation(room_id):
-    """Hold a room for reservation while user is paying deposit (internal)."""
     data = request.get_json() or {}
-    tenant_id = data.get('tenant_id')
+    user_id = data.get('user_id')
     payment_id = data.get('payment_id')
-    if not tenant_id or not payment_id:
-        return jsonify({'message': 'Thiếu tenant_id hoặc payment_id!'}), 400
+    if not user_id or not payment_id:
+        return jsonify({'message': 'Thiếu user_id hoặc payment_id!'}), 400
 
     room = rooms_collection.find_one({'_id': room_id})
     if not room:
@@ -371,7 +369,7 @@ def internal_hold_room_reservation(room_id):
 
     update_fields = {
         'status': Config.STATUS_RESERVED,
-        'reserved_by_tenant_id': str(tenant_id),
+        'reserved_by_user_id': str(user_id),
         'reserved_payment_id': str(payment_id),
         'reservation_status': 'pending_payment',
         'reserved_at': get_timestamp(),
@@ -384,14 +382,12 @@ def internal_hold_room_reservation(room_id):
 
 @app.route('/internal/rooms/<room_id>/reservation/confirm', methods=['PUT'])
 @internal_api_required
+# Confirm a room reservation after VNPay completed (internal)
+# Robust handling: If room wasn't properly held before, we still mark it as reserved
 def internal_confirm_room_reservation(room_id):
-    """Confirm a room reservation after VNPay completed (internal).
-    
-    Robust handling: If room wasn't properly held before, we still mark it as reserved.
-    """
     data = request.get_json() or {}
     payment_id = data.get('payment_id')
-    tenant_id = data.get('tenant_id')
+    user_id = data.get('user_id')
     
     if not payment_id:
         return jsonify({'message': 'Thiếu payment_id!'}), 400
@@ -418,9 +414,9 @@ def internal_confirm_room_reservation(room_id):
         'updated_at': get_timestamp()
     }
     
-    # Set tenant_id if provided
-    if tenant_id:
-        update_fields['reserved_by_tenant_id'] = str(tenant_id)
+    # Set user_id if provided
+    if user_id:
+        update_fields['reserved_by_user_id'] = str(user_id)
     
     rooms_collection.update_one({'_id': room_id}, {'$set': update_fields})
     return jsonify({'message': 'Xác nhận giữ phòng thành công!', 'room_id': room_id}), 200
@@ -428,8 +424,8 @@ def internal_confirm_room_reservation(room_id):
 
 @app.route('/internal/rooms/<room_id>/reservation/release', methods=['PUT'])
 @internal_api_required
+# Release a room if VNPay was cancelled/failed (internal)
 def internal_release_room_reservation(room_id):
-    """Release a room if VNPay was cancelled/failed (internal)."""
     data = request.get_json() or {}
     payment_id = data.get('payment_id')
     if not payment_id:
@@ -453,7 +449,7 @@ def internal_release_room_reservation(room_id):
         {
             '$set': {
                 'status': Config.STATUS_AVAILABLE,
-                'reserved_by_tenant_id': None,
+                'reserved_by_user_id': None,
                 'reserved_payment_id': None,
                 'reservation_status': None,
                 'reserved_at': None,
@@ -466,14 +462,14 @@ def internal_release_room_reservation(room_id):
 
 @app.route('/internal/rooms/<room_id>/occupy', methods=['PUT'])
 @internal_api_required
+# Mark a reserved room as occupied after admin creates a contract (internal)
 def internal_occupy_room(room_id):
-    """Mark a reserved room as occupied after admin creates a contract (internal)."""
     data = request.get_json() or {}
-    tenant_id = data.get('tenant_id')
+    user_id = data.get('user_id')
     contract_id = data.get('contract_id')
 
-    if not tenant_id or not contract_id:
-        return jsonify({'message': 'Thiếu tenant_id hoặc contract_id!'}), 400
+    if not user_id or not contract_id:
+        return jsonify({'message': 'Thiếu user_id hoặc contract_id!'}), 400
 
     room = rooms_collection.find_one({'_id': room_id})
     if not room:
@@ -482,9 +478,9 @@ def internal_occupy_room(room_id):
     if room.get('status') != Config.STATUS_RESERVED:
         return jsonify({'message': 'Phòng không ở trạng thái giữ!'}), 400
 
-    # A tenant can occupy only one room at a time
+    # A user can occupy only one room at a time
     existing = rooms_collection.find_one({
-        'current_tenant_id': str(tenant_id),
+        'current_user_id': str(user_id),
         'status': Config.STATUS_OCCUPIED,
         '_id': {'$ne': room_id}
     })
@@ -498,8 +494,8 @@ def internal_occupy_room(room_id):
     update_fields = {
         'status': Config.STATUS_OCCUPIED,
         'current_contract_id': str(contract_id),
-        'current_tenant_id': str(tenant_id),
-        'reserved_by_tenant_id': None,
+        'current_user_id': str(user_id),
+        'reserved_by_user_id': None,
         'reserved_payment_id': None,
         'reservation_status': None,
         'reserved_at': None,
@@ -512,8 +508,8 @@ def internal_occupy_room(room_id):
 
 @app.route('/internal/rooms/<room_id>/vacate', methods=['PUT'])
 @internal_api_required
+# Vacate a room when contract is terminated (internal)
 def internal_vacate_room(room_id):
-    """Vacate a room when contract is terminated (internal)."""
     room = rooms_collection.find_one({'_id': room_id})
     if not room:
         return jsonify({'message': 'Phòng không tồn tại!'}), 404
@@ -528,8 +524,8 @@ def internal_vacate_room(room_id):
     update_fields = {
         'status': Config.STATUS_AVAILABLE,
         'current_contract_id': None,
-        'current_tenant_id': None,
-        'reserved_by_tenant_id': None,
+        'current_user_id': None,
+        'reserved_by_user_id': None,
         'reserved_payment_id': None,
         'reservation_status': None,
         'reserved_at': None,

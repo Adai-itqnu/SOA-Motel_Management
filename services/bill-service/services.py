@@ -1,4 +1,4 @@
-"""Bill Service - External Service Calls"""
+# Bill Service - External Service Calls
 import requests
 import calendar
 import datetime
@@ -6,7 +6,8 @@ from config import Config
 
 
 def get_service_url(service_name):
-    """Get service URL from Consul"""
+# Get service URL from Consul
+    
     try:
         url = f"http://{Config.CONSUL_HOST}:{Config.CONSUL_PORT}/v1/catalog/service/{service_name}"
         response = requests.get(url, timeout=5)
@@ -16,12 +17,13 @@ def get_service_url(service_name):
     except:
         pass
     
-    ports = {'room-service': 5002, 'tenant-service': 5003, 'notification-service': 5010}
+    ports = {'room-service': 5002, 'user-service': 5003, 'notification-service': 5010}
     return f"http://{service_name}:{ports.get(service_name, 5001)}"
 
 
 def fetch_service_data(service_name, endpoint, token=None):
-    """Fetch data from other service"""
+# Fetch data from other service
+    
     try:
         url = get_service_url(service_name)
         headers = {}
@@ -38,7 +40,8 @@ def fetch_service_data(service_name, endpoint, token=None):
 
 
 def send_notification(user_id, title, message, notification_type, metadata=None):
-    """Send notification via notification-service"""
+# Send notification via notification-service
+    
     try:
         url = get_service_url('notification-service')
         response = requests.post(

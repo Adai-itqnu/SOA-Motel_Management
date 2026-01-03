@@ -1,4 +1,4 @@
-"""Report Service - Utility Functions"""
+# Report Service - Utility Functions
 import datetime
 from model import bills_collection
 
@@ -8,13 +8,15 @@ def get_timestamp():
 
 
 def format_bill(bill):
-    """Format bill for response"""
+# Format bill for response
+    
     bill['id'] = bill['_id']
     return bill
 
 
 def calculate_bill_amounts(data):
-    """Calculate bill amounts"""
+# Calculate bill amounts
+    
     electric_used = data['electric_new'] - data['electric_old']
     water_used = data['water_new'] - data['water_old']
     
@@ -35,7 +37,8 @@ def calculate_bill_amounts(data):
 
 
 def get_bill_stats():
-    """Get bill statistics"""
+# Get bill statistics
+    
     return {
         'total': bills_collection.count_documents({}),
         'paid': bills_collection.count_documents({'status': 'paid'}),
@@ -45,7 +48,8 @@ def get_bill_stats():
 
 
 def get_total_revenue():
-    """Calculate total revenue from paid bills"""
+# Calculate total revenue from paid bills
+    
     # Try both 'total' and 'total_amount' fields for compatibility
     pipeline = [
         {'$match': {'status': 'paid'}},
@@ -56,7 +60,8 @@ def get_total_revenue():
 
 
 def get_total_debt():
-    """Calculate total debt from unpaid/partial bills"""
+# Calculate total debt from unpaid/partial bills
+    
     # Calculate debt as total - paid_amount, or use debt_amount if exists
     pipeline = [
         {'$match': {'status': {'$in': ['unpaid', 'partial']}}},
@@ -73,7 +78,8 @@ def get_total_debt():
 
 
 def get_revenue_by_month(year):
-    """Get revenue aggregated by month - handles string month format like '2025-12'"""
+# Get revenue aggregated by month - handles string month format like '2025-12'
+    
     year_str = str(year)
     
     # Match bills where month starts with the year (e.g., "2025-12" starts with "2025")
@@ -106,7 +112,8 @@ def get_revenue_by_month(year):
 
 
 def get_deposits_by_month(payments, year):
-    """Calculate deposits by month from completed payments"""
+# Calculate deposits by month from completed payments
+    
     deposits_by_month = {}
     for payment in payments:
         try:
