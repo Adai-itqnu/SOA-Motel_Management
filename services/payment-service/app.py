@@ -14,6 +14,7 @@ from decorators import token_required, admin_required, internal_api_required
 from utils import (
     auto_create_contract,
     calculate_total_paid,
+    check_user_has_active_contract,
     confirm_room_reservation,
     fetch_service_data,
     hold_room_reservation,
@@ -605,6 +606,12 @@ def vnpay_create_room_deposit(current_user):
     user_id = current_user.get("user_id") or current_user.get("_id")
     if not user_id:
         return jsonify({"message": "Không tìm thấy user_id!"}), 400
+
+    # Check if user already has an active contract
+    if check_user_has_active_contract(user_id):
+        return jsonify({
+            "message": "Bạn đã có hợp đồng thuê phòng đang hoạt động. Không thể đặt cọc phòng mới!"
+        }), 400
 
     deposit_amount_vnd = int(round(deposit_amount))
 

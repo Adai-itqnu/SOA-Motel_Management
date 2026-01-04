@@ -44,32 +44,7 @@
         },
       };
     </script>
-    <style>
-      ::-webkit-scrollbar {
-        width: 8px;
-      }
-      ::-webkit-scrollbar-track {
-        background: transparent;
-      }
-      ::-webkit-scrollbar-thumb {
-        background: #cbd5e1;
-        border-radius: 4px;
-      }
-      ::-webkit-scrollbar-thumb:hover {
-        background: #94a3b8;
-      }
-      .dropdown-menu {
-        opacity: 0;
-        visibility: hidden;
-        transform: translateY(-6px);
-        transition: all 0.18s ease;
-      }
-      .dropdown-menu.show {
-        opacity: 1;
-        visibility: visible;
-        transform: translateY(0);
-      }
-    </style>
+    <link rel="stylesheet" href="/assets/css/user.css" />
   </head>
   <body
     class="bg-bg-soft text-gray-900 font-display min-h-screen flex flex-col"
@@ -341,6 +316,150 @@
               </div>
             </form>
           </div>
+
+          <!-- Password Change Section -->
+          <div class="bg-white rounded-2xl shadow-card p-6 md:p-8 mt-8">
+            <div class="flex items-center gap-3 mb-6">
+              <div
+                class="size-10 bg-amber-100 rounded-xl flex items-center justify-center"
+              >
+                <span class="material-symbols-outlined text-amber-600"
+                  >lock</span
+                >
+              </div>
+              <div>
+                <h3 class="text-lg font-bold text-gray-900">
+                  Đổi mật khẩu
+                </h3>
+                <p class="text-sm text-gray-500">
+                  Cập nhật mật khẩu đăng nhập của bạn
+                </p>
+              </div>
+            </div>
+
+            <form id="passwordForm" class="space-y-5">
+              <!-- Current Password -->
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1.5"
+                  >Mật khẩu hiện tại <span class="text-primary">*</span></label
+                >
+                <div class="relative">
+                  <span
+                    class="absolute left-4 top-1/2 -translate-y-1/2 material-symbols-outlined text-gray-400 text-[20px]"
+                    >key</span
+                  >
+                  <input
+                    type="password"
+                    id="currentPassword"
+                    required
+                    class="w-full pl-12 pr-12 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary transition"
+                    placeholder="Nhập mật khẩu hiện tại"
+                  />
+                  <button
+                    type="button"
+                    onclick="togglePassword('currentPassword', this)"
+                    class="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  >
+                    <span class="material-symbols-outlined text-[20px]">visibility</span>
+                  </button>
+                </div>
+              </div>
+
+              <!-- New Password -->
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1.5"
+                  >Mật khẩu mới <span class="text-primary">*</span></label
+                >
+                <div class="relative">
+                  <span
+                    class="absolute left-4 top-1/2 -translate-y-1/2 material-symbols-outlined text-gray-400 text-[20px]"
+                    >lock_open</span
+                  >
+                  <input
+                    type="password"
+                    id="newPassword"
+                    required
+                    minlength="6"
+                    class="w-full pl-12 pr-12 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary transition"
+                    placeholder="Nhập mật khẩu mới (ít nhất 6 ký tự)"
+                  />
+                  <button
+                    type="button"
+                    onclick="togglePassword('newPassword', this)"
+                    class="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  >
+                    <span class="material-symbols-outlined text-[20px]">visibility</span>
+                  </button>
+                </div>
+                <p class="text-xs text-gray-500 mt-1.5 flex items-center gap-1">
+                  <span class="material-symbols-outlined text-[14px]"
+                    >info</span
+                  >
+                  Mật khẩu phải có ít nhất 6 ký tự
+                </p>
+              </div>
+
+              <!-- Confirm New Password -->
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1.5"
+                  >Xác nhận mật khẩu mới <span class="text-primary">*</span></label
+                >
+                <div class="relative">
+                  <span
+                    class="absolute left-4 top-1/2 -translate-y-1/2 material-symbols-outlined text-gray-400 text-[20px]"
+                    >lock</span
+                  >
+                  <input
+                    type="password"
+                    id="confirmPassword"
+                    required
+                    minlength="6"
+                    class="w-full pl-12 pr-12 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary transition"
+                    placeholder="Nhập lại mật khẩu mới"
+                  />
+                  <button
+                    type="button"
+                    onclick="togglePassword('confirmPassword', this)"
+                    class="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  >
+                    <span class="material-symbols-outlined text-[20px]">visibility</span>
+                  </button>
+                </div>
+              </div>
+
+              <!-- Password Messages -->
+              <div
+                id="pwdErrorMsg"
+                class="hidden bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-xl text-sm items-center gap-2"
+              >
+                <span class="material-symbols-outlined text-[18px]">error</span>
+                <span id="pwdErrorText"></span>
+              </div>
+              <div
+                id="pwdSuccessMsg"
+                class="hidden bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-xl text-sm items-center gap-2"
+              >
+                <span class="material-symbols-outlined text-[18px]"
+                  >check_circle</span
+                >
+                <span id="pwdSuccessText"></span>
+              </div>
+
+              <!-- Submit Button -->
+              <div class="pt-2">
+                <button
+                  type="submit"
+                  id="changePwdBtn"
+                  class="w-full py-3.5 bg-amber-500 hover:bg-amber-600 text-white rounded-xl font-semibold transition-all shadow-lg shadow-amber-500/20 flex items-center justify-center gap-2"
+                >
+                  <span class="material-symbols-outlined text-[20px]"
+                    >lock_reset</span
+                  >
+                  <span id="changePwdBtnText">Đổi mật khẩu</span>
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       </div>
     </main>
@@ -485,6 +604,106 @@
         document.getElementById("errorMsg").classList.remove("flex");
         document.getElementById("successMsg").classList.add("hidden");
         document.getElementById("successMsg").classList.remove("flex");
+      }
+
+      // ===== Password Change Functions =====
+
+      // Toggle password visibility
+      function togglePassword(inputId, btn) {
+        const input = document.getElementById(inputId);
+        const icon = btn.querySelector("span");
+        if (input.type === "password") {
+          input.type = "text";
+          icon.textContent = "visibility_off";
+        } else {
+          input.type = "password";
+          icon.textContent = "visibility";
+        }
+      }
+
+      // Initialize password form
+      document.addEventListener("DOMContentLoaded", () => {
+        const pwdForm = document.getElementById("passwordForm");
+        if (pwdForm) {
+          pwdForm.addEventListener("submit", handleChangePassword);
+        }
+      });
+
+      async function handleChangePassword(e) {
+        e.preventDefault();
+        hidePwdMessages();
+
+        const currentPassword = document.getElementById("currentPassword").value;
+        const newPassword = document.getElementById("newPassword").value;
+        const confirmPassword = document.getElementById("confirmPassword").value;
+
+        // Validation
+        if (!currentPassword || !newPassword || !confirmPassword) {
+          showPwdError("Vui lòng điền đầy đủ thông tin");
+          return;
+        }
+
+        if (newPassword.length < 6) {
+          showPwdError("Mật khẩu mới phải có ít nhất 6 ký tự");
+          return;
+        }
+
+        if (newPassword !== confirmPassword) {
+          showPwdError("Xác nhận mật khẩu không khớp");
+          return;
+        }
+
+        if (currentPassword === newPassword) {
+          showPwdError("Mật khẩu mới phải khác mật khẩu hiện tại");
+          return;
+        }
+
+        const btn = document.getElementById("changePwdBtn");
+        const btnText = document.getElementById("changePwdBtnText");
+        btn.disabled = true;
+        btnText.textContent = "Đang xử lý...";
+
+        try {
+          const res = await API.put("/auth/change-password", {
+            old_password: currentPassword,
+            new_password: newPassword
+          });
+
+          if (res.ok) {
+            showPwdSuccess("Đổi mật khẩu thành công!");
+            // Clear form
+            document.getElementById("passwordForm").reset();
+          } else {
+            showPwdError(res.data?.message || "Không thể đổi mật khẩu");
+          }
+        } catch (error) {
+          console.error("Change password error:", error);
+          showPwdError("Lỗi kết nối server");
+        } finally {
+          btn.disabled = false;
+          btnText.textContent = "Đổi mật khẩu";
+        }
+      }
+
+      function showPwdError(msg) {
+        const el = document.getElementById("pwdErrorMsg");
+        document.getElementById("pwdErrorText").textContent = msg;
+        el.classList.remove("hidden");
+        el.classList.add("flex");
+      }
+
+      function showPwdSuccess(msg) {
+        const el = document.getElementById("pwdSuccessMsg");
+        document.getElementById("pwdSuccessText").textContent = msg;
+        el.classList.remove("hidden");
+        el.classList.add("flex");
+      }
+
+      function hidePwdMessages() {
+        document.getElementById("pwdErrorMsg").classList.add("hidden");
+        document.getElementById("pwdErrorMsg").classList.remove("flex");
+        document.getElementById("pwdSuccessMsg").classList.add("hidden");
+        document.getElementById("pwdSuccessMsg").classList.remove("flex");
       }
     </script>
   </body>

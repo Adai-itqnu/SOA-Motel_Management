@@ -47,12 +47,22 @@ def get_bill_stats():
     }
 
 
-def get_total_revenue():
-# Calculate total revenue from paid bills
+def get_total_revenue(year=None):
+# Calculate total revenue from paid bills, optionally filtered by year
+    
+    match_query = {'status': 'paid'}
+    
+    # Filter by year if provided
+    if year:
+        year_str = str(year)
+        match_query['$or'] = [
+            {'month': {'$regex': f'^{year_str}'}},  # String format "2025-12"
+            {'year': int(year)}  # Legacy numeric format
+        ]
     
     # Try both 'total' and 'total_amount' fields for compatibility
     pipeline = [
-        {'$match': {'status': 'paid'}},
+        {'$match': match_query},
         {'$group': {'_id': None, 'total': {'$sum': {'$ifNull': ['$total', {'$ifNull': ['$total_amount', 0]}]}}}}
     ]
     result = list(bills_collection.aggregate(pipeline))

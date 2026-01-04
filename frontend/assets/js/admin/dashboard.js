@@ -33,15 +33,15 @@ async function loadDashboardData() {
             const available = rooms.filter(r => r.status === 'available').length;
             const occupied = rooms.filter(r => r.status === 'occupied').length;
             
-            // Calculate estimated revenue
+            // Calculate estimated revenue from occupied rooms
             const revenue = rooms
                 .filter(r => r.status === 'occupied')
-                .reduce((sum, r) => sum + (r.price || 0), 0);
+                .reduce((sum, r) => sum + (r.price || r.monthly_rent || r.rent || 0), 0);
             
             UI.setText('statTotalRooms', total);
             UI.setText('statAvailable', available);
             UI.setText('statOccupied', occupied);
-            UI.setText('statRevenue', formatCurrency(revenue));
+            UI.setText('statRevenue', revenue > 0 ? formatCurrency(revenue) : 'Chưa có');
             
             // Show recent rooms
             renderRecentRooms(rooms.slice(-5).reverse());

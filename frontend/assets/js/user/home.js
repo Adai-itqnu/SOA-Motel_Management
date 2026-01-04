@@ -28,44 +28,61 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 function setVnpayNotice(noticeEl, { title, message, cls, baseInfo }) {
-  // Add slide-in animation styles
-  noticeEl.style.transition = "transform 0.4s ease-out, opacity 0.4s ease-out";
-  noticeEl.style.transform = "translateX(120%)";
-  noticeEl.style.opacity = "0";
+  // Use horizontal banner style at top of page
+  const bgClass = cls.includes('green') ? 'bg-green-500' : 
+                  cls.includes('red') ? 'bg-red-500' : 
+                  cls.includes('amber') ? 'bg-amber-500' : 
+                  cls.includes('indigo') ? 'bg-indigo-500' : 'bg-gray-500';
+  
+  const iconName = cls.includes('green') ? 'check_circle' : 
+                   cls.includes('red') ? 'error' : 
+                   cls.includes('amber') ? 'warning' : 
+                   cls.includes('indigo') ? 'pending' : 'info';
 
-  noticeEl.className = `rounded-2xl p-4 mb-6 shadow-lg ${cls}`;
+  noticeEl.className = `fixed top-20 left-1/2 -translate-x-1/2 z-50 max-w-2xl w-full px-4`;
+  noticeEl.style.transition = "transform 0.4s ease-out, opacity 0.4s ease-out";
+  noticeEl.style.transform = "translateY(-100%)";
+  noticeEl.style.opacity = "0";
+  
   noticeEl.innerHTML = `
-    <div class="flex items-start gap-3">
-      <div class="flex-1">
-        <div class="font-bold">${title}</div>
-        <div class="text-sm mt-1">${message}</div>
-        ${
-          baseInfo
-            ? `<div class="text-xs mt-2 opacity-80">${baseInfo}</div>`
-            : ""
-        }
-      </div>
-      <button id="vnpayNoticeClose" class="text-sm font-semibold underline hover:text-primary transition-colors">Đóng</button>
+    <div class="flex items-center justify-center gap-3 ${bgClass} text-white px-6 py-3 rounded-xl shadow-lg">
+      <span class="material-symbols-outlined text-xl">${iconName}</span>
+      <span class="font-medium">${title}</span>
+      <span class="text-white/90">${message}</span>
+      <button id="vnpayNoticeClose" class="ml-4 hover:bg-white/20 rounded-full p-1 transition-colors">
+        <span class="material-symbols-outlined text-lg">close</span>
+      </button>
     </div>
   `;
   noticeEl.classList.remove("hidden");
 
-  // Trigger slide-in animation from right
+  // Trigger slide-down animation
   requestAnimationFrame(() => {
     requestAnimationFrame(() => {
-      noticeEl.style.transform = "translateX(0)";
+      noticeEl.style.transform = "translateY(0)";
       noticeEl.style.opacity = "1";
     });
   });
 
   document.getElementById("vnpayNoticeClose")?.addEventListener("click", () => {
     // Slide out animation before hiding
-    noticeEl.style.transform = "translateX(120%)";
+    noticeEl.style.transform = "translateY(-100%)";
     noticeEl.style.opacity = "0";
     setTimeout(() => {
       noticeEl.classList.add("hidden");
     }, 400);
   });
+
+  // Auto-hide after 8 seconds
+  setTimeout(() => {
+    if (!noticeEl.classList.contains("hidden")) {
+      noticeEl.style.transform = "translateY(-100%)";
+      noticeEl.style.opacity = "0";
+      setTimeout(() => {
+        noticeEl.classList.add("hidden");
+      }, 400);
+    }
+  }, 8000);
 }
 
 async function pollVnpayVerification({

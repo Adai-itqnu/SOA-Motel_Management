@@ -166,26 +166,36 @@ def get_overview(current_user):
 # Get overview report
     
     token = request.headers.get('Authorization')
+    year = request.args.get('year', datetime.datetime.now().year)
     
     rooms = get_room_stats(token) or {'total': 0, 'available': 0, 'occupied': 0, 'occupancy_rate': 0}
     active_contracts = get_contracts(token, 'active')
     all_contracts = get_contracts(token)
     
     bill_stats = get_bill_stats()
-    revenue_bills = get_total_revenue()
+    revenue_bills = get_total_revenue(year)  # Pass year filter
     
-    # Calculate deposit revenue from completed payments
+    # Calculate deposit revenue from completed payments (filtered by year)
     deposit_revenue = 0
     payments_data = get_payments(token, 'completed')
     if payments_data and payments_data.get('payments'):
         for p in payments_data['payments']:
             if p.get('payment_type') == 'room_reservation_deposit':
-                deposit_revenue += float(p.get('amount', 0))
+                # Filter by year
+                created_str = p.get('created_at', p.get('updated_at', ''))
+                if created_str:
+                    try:
+                        created = datetime.datetime.fromisoformat(created_str.replace('Z', '+00:00'))
+                        if created.year == int(year):
+                            deposit_revenue += float(p.get('amount', 0))
+                    except:
+                        pass
     
     total_revenue = revenue_bills + deposit_revenue
     total_debt = get_total_debt()
     
     return jsonify({
+        'year': int(year),
         'rooms': rooms,
         'contracts': {'active': active_contracts['total'] if active_contracts else 0},
         'bills': bill_stats,

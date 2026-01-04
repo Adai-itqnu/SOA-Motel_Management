@@ -332,7 +332,15 @@
       const badge = document.getElementById("notifBadge");
       const list = document.getElementById("notifList");
 
-      if (!bell || !dropdown) return;
+      console.log("Layout: Setting up notifications", {
+        bell: !!bell,
+        dropdown: !!dropdown,
+      });
+
+      if (!bell || !dropdown) {
+        console.warn("Layout: Notification elements not found");
+        return;
+      }
 
       if (list) {
         list.innerHTML =
@@ -342,8 +350,14 @@
       // Load notifications from server
       this.loadNotifications();
 
-      bell.addEventListener("click", (e) => {
+      // Clone bell to remove old listeners
+      const newBell = bell.cloneNode(true);
+      bell.parentNode.replaceChild(newBell, bell);
+
+      newBell.addEventListener("click", (e) => {
+        e.preventDefault();
         e.stopPropagation();
+        console.log("Layout: Notification bell clicked");
         dropdown.classList.toggle("show");
         const userDropdown = document.getElementById("userDropdown");
         if (userDropdown) userDropdown.classList.remove("show");
@@ -355,7 +369,7 @@
       });
 
       document.addEventListener("click", (e) => {
-        if (!dropdown.contains(e.target) && !bell.contains(e.target)) {
+        if (!dropdown.contains(e.target) && !newBell.contains(e.target)) {
           dropdown.classList.remove("show");
         }
       });

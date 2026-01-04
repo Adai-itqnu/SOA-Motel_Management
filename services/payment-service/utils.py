@@ -36,6 +36,30 @@ def get_service_url(service_name):
         port = service_ports.get(service_name, 5001)
         return f"http://{service_name}:{port}"
 
+
+# Check if user already has an active contract
+def check_user_has_active_contract(user_id):
+    """
+    Check if user already has an active rental contract.
+    Returns True if user has active contract, False otherwise.
+    """
+    try:
+        service_url = get_service_url('contract-service')
+        response = requests.get(
+            f"{service_url}/internal/contracts",
+            headers={'X-Internal-Api-Key': INTERNAL_API_KEY},
+            timeout=10
+        )
+        if response.ok:
+            contracts = response.json().get('contracts', [])
+            for contract in contracts:
+                if contract.get('user_id') == str(user_id) and contract.get('status') == 'active':
+                    return True
+        return False
+    except Exception as e:
+        print(f"Error checking user contract: {e}")
+        return False
+
 # Helper function: Get data from other services
 def fetch_service_data(service_name, endpoint, token=None):
     try:

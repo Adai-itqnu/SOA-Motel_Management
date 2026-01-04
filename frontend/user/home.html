@@ -43,56 +43,13 @@
         },
       };
     </script>
-    <style>
-      body {
-        font-family: "Be Vietnam Pro", "Noto Sans", sans-serif;
-        background: #f9f6f6;
-      }
-      .shadow-glow {
-        box-shadow: 0 10px 25px rgba(234, 42, 51, 0.25);
-      }
-      .shadow-card {
-        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.06);
-      }
-      .dropdown-menu {
-        display: none;
-        opacity: 0;
-        transform: translateY(8px);
-        transition: opacity 150ms ease, transform 150ms ease;
-      }
-      .dropdown-menu.show {
-        display: block;
-        opacity: 1;
-        transform: translateY(0);
-      }
-      .chip {
-        border: 1px solid #e5e7eb;
-        background: #fff;
-        color: #4b5563;
-        padding: 0.5rem 0.85rem;
-        border-radius: 9999px;
-        font-weight: 600;
-        transition: all 150ms ease;
-      }
-      .chip:hover {
-        border-color: #d1d5db;
-        color: #111827;
-      }
-      .chip.active {
-        background: rgba(234, 42, 51, 0.1);
-        color: #ea2a33;
-        border-color: #f3d0d2;
-      }
-    </style>
+    <link rel="stylesheet" href="/assets/css/user.css" />
   </head>
   <body
     class="bg-bg-soft text-gray-900 font-display min-h-screen flex flex-col relative"
   >
-    <!-- floating vnpay notice -->
-    <div
-      id="vnpayNotice"
-      class="hidden fixed top-24 right-5 z-50 max-w-sm w-full"
-    ></div>
+    <!-- floating vnpay notice banner -->
+    <div id="vnpayNotice" class="hidden"></div>
 
     <!-- background decorations -->
     <div class="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
@@ -412,7 +369,7 @@
             <div class="bg-blue-50 border border-blue-100 rounded-xl p-4">
               <div class="flex items-center gap-3">
                 <div class="w-12 h-12 bg-white rounded-lg flex items-center justify-center shadow-sm">
-                  <img src="https://sandbox.vnpayment.vn/paymentv2/images/icons/mics/128x128-color_vnpay-a.svg" alt="VNPay" class="w-8 h-8" />
+                  <img src="/assets/images/vnpay-logo.png" alt="VNPay" class="w-8 h-8" />
                 </div>
                 <div class="flex-1">
                   <p class="font-bold text-gray-900">Thanh toán qua VNPay</p>
@@ -493,83 +450,72 @@
         let cfg = { 
             title: "Thanh toán", 
             msg: "", 
-            icon: "check_circle",
-            color: "text-green-500",
-            bg: "bg-white",
-            border: "border-l-4 border-green-500"
+            bgClass: "bg-green-500",
+            icon: "check_circle"
         };
 
         if (vnpayStatus === "success") {
             cfg = {
               title: "Thanh toán thành công!",
               msg: "Giao dịch đã được xác nhận. Phòng đã được giữ cho bạn.",
-              icon: "check_circle",
-              color: "text-green-500",
-              bg: "bg-white",
-              border: "border-l-4 border-green-500"
+              bgClass: "bg-green-500",
+              icon: "check_circle"
             };
         } else if (vnpayStatus === "cancel") {
             cfg = {
               title: "Thanh toán bị hủy",
               msg: "Bạn đã hủy giao dịch thanh toán.",
-              icon: "cancel",
-              color: "text-amber-500",
-              bg: "bg-white",
-              border: "border-l-4 border-amber-500"
+              bgClass: "bg-amber-500",
+              icon: "warning"
             };
         } else if (vnpayStatus === "pending") {
             cfg = {
               title: "Đang xử lý",
               msg: "Giao dịch đang chờ ngân hàng xác nhận...",
-              icon: "hourglass_top",
-              color: "text-blue-500",
-              bg: "bg-white",
-              border: "border-l-4 border-blue-500"
+              bgClass: "bg-blue-500",
+              icon: "pending"
             };
         } else {
              cfg = {
               title: "Thanh toán thất bại",
               msg: "Có lỗi xảy ra trong quá trình thanh toán.",
-              icon: "error",
-              color: "text-red-500",
-              bg: "bg-white",
-              border: "border-l-4 border-red-500"
+              bgClass: "bg-red-500",
+              icon: "error"
             };
         }
 
-        notice.className = `fixed top-24 right-0 z-50 transform transition-all duration-500 translate-x-full`;
+        // Use horizontal banner style at top center
+        notice.className = `fixed top-20 left-1/2 -translate-x-1/2 z-50 max-w-2xl w-full px-4`;
+        notice.style.transition = "transform 0.4s ease-out, opacity 0.4s ease-out";
+        notice.style.transform = "translateY(-100%)";
+        notice.style.opacity = "0";
+        
         notice.innerHTML = `
-            <div class="m-4 max-w-sm w-full shadow-2xl rounded-lg overflow-hidden ${cfg.bg} pointer-events-auto ring-1 ring-black ring-opacity-5 ${cfg.border} flex p-4 animate-in slide-in-from-right duration-500">
-                <div class="flex-shrink-0">
-                    <span class="material-symbols-outlined ${cfg.color} text-3xl">${cfg.icon}</span>
-                </div>
-                <div class="ml-3 w-0 flex-1 pt-0.5">
-                    <p class="text-sm font-bold text-gray-900">${cfg.title}</p>
-                    <p class="mt-1 text-sm text-gray-500 leading-relaxed">${cfg.msg}</p>
-                    ${roomId ? `<p class="mt-1 text-xs text-gray-400 font-mono">Room: ${roomId}</p>` : ''}
-                </div>
-                <div class="ml-4 flex-shrink-0 flex">
-                    <button onclick="this.closest('#vnpayNotice').classList.add('translate-x-full', 'opacity-0')" class="bg-white rounded-md inline-flex text-gray-400 hover:text-gray-500 focus:outline-none">
-                        <span class="sr-only">Close</span>
-                        <span class="material-symbols-outlined">close</span>
-                    </button>
-                </div>
+            <div class="flex items-center justify-center gap-3 ${cfg.bgClass} text-white px-6 py-3 rounded-xl shadow-lg">
+                <span class="material-symbols-outlined text-xl">${cfg.icon}</span>
+                <span class="font-medium">${cfg.title}</span>
+                <span class="text-white/90">${cfg.msg}</span>
+                <button onclick="this.closest('#vnpayNotice').style.transform='translateY(-100%)'; this.closest('#vnpayNotice').style.opacity='0'; setTimeout(() => this.closest('#vnpayNotice').classList.add('hidden'), 400);" class="ml-4 hover:bg-white/20 rounded-full p-1 transition-colors">
+                    <span class="material-symbols-outlined text-lg">close</span>
+                </button>
             </div>
         `;
         notice.classList.remove("hidden");
         
-        // Slide in animation
+        // Slide down animation
         setTimeout(() => {
-            notice.classList.remove("translate-x-full");
+            notice.style.transform = "translateY(0)";
+            notice.style.opacity = "1";
         }, 100);
 
-        // Auto close after 6s
+        // Auto close after 8s
         setTimeout(() => {
-            notice.classList.add("translate-x-full", "opacity-0");
-             setTimeout(() => {
+            notice.style.transform = "translateY(-100%)";
+            notice.style.opacity = "0";
+            setTimeout(() => {
                 notice.classList.add("hidden");
-            }, 500);
-        }, 6000);
+            }, 400);
+        }, 8000);
       }
 
 

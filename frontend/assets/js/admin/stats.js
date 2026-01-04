@@ -23,6 +23,7 @@ document.addEventListener("DOMContentLoaded", function () {
   document.getElementById("yearSelect").addEventListener("change", function () {
     currentYear = parseInt(this.value);
     loadRevenueData();
+    loadOverviewStats();  // Also reload overview when year changes
   });
 });
 
@@ -60,7 +61,7 @@ async function loadAllStats() {
 
 async function loadOverviewStats() {
   try {
-    const response = await fetch("/api/reports/overview", {
+    const response = await fetch(`/api/reports/overview?year=${currentYear}`, {
       headers: { Authorization: `Bearer ${getToken()}` },
     });
 
