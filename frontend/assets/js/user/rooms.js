@@ -115,7 +115,7 @@ async function pollVnpayVerification({
     if (noticeEl.classList.contains("hidden")) return;
 
     const res = await API.get(
-      `/payments/vnpay/verify/${encodeURIComponent(paymentId)}`
+      `/vnpay/verify/${encodeURIComponent(paymentId)}`
     );
     if (res.ok) {
       const status = res.data?.status;
@@ -549,7 +549,7 @@ async function handleBookingSubmit(e) {
     }
 
     // Call API to create payment with booking info
-    const res = await API.post("/payments/vnpay/room-deposit/create", {
+    const res = await API.post("/vnpay/room-deposit", {
       room_id: roomId,
       check_in_date: checkInDate,
     });

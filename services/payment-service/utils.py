@@ -2,39 +2,29 @@ import requests
 from config import CONSUL_HOST, CONSUL_PORT, INTERNAL_API_KEY
 from model import payments_collection
 
-# Helper function: Get service URL from Consul
+# Helper function: Get service URL from Consul (dynamic discovery)
 def get_service_url(service_name):
+    """
+    Get service URL dynamically from Consul.
+    Falls back to service name in Docker network if Consul unavailable.
+    """
     try:
         consul_url = f"http://{CONSUL_HOST}:{CONSUL_PORT}/v1/catalog/service/{service_name}"
         response = requests.get(consul_url, timeout=5)
         if response.ok and response.json():
             service = response.json()[0]
             host = service.get('ServiceAddress') or service.get('Address') or service_name
-            return f"http://{host}:{service['ServicePort']}"
-        # Fallback: use service name directly in Docker network
-        service_ports = {
-            'bill-service': 5007,
-            'booking-service': 5005,
-            'contract-service': 5006,
-            'notification-service': 5010,
-            'room-service': 5002,
-            'payment-service': 5008,
-        }
-        port = service_ports.get(service_name, 5001)
-        return f"http://{service_name}:{port}"
+            port = service.get('ServicePort')
+            if host and port:
+                return f"http://{host}:{port}"
     except Exception as e:
-        print(f"Error getting service URL: {e}")
-        # Fallback: use service name directly in Docker network
-        service_ports = {
-            'bill-service': 5007,
-            'booking-service': 5005,
-            'contract-service': 5006,
-            'notification-service': 5010,
-            'room-service': 5002,
-            'payment-service': 5008,
-        }
-        port = service_ports.get(service_name, 5001)
-        return f"http://{service_name}:{port}"
+        print(f"[Consul] Error getting {service_name} URL: {e}")
+    
+    # Fallback: use service name in Docker network (Consul agent will resolve)
+    # This works in Docker Compose where service name is DNS resolvable
+    import os
+    fallback_port = os.getenv(f"{service_name.upper().replace('-', '_')}_PORT", "80")
+    return f"http://{service_name}:{fallback_port}"
 
 
 # Check if user already has an active contract
@@ -136,7 +126,7 @@ def update_booking_deposit_status(booking_id, status, transaction_id=None, payme
         if payment_id:
             payload['payment_id'] = payment_id
         response = requests.put(
-            f"{booking_service_url}/api/bookings/{booking_id}/deposit-status",
+            f"{booking_service_url}/api/bookings/{booking_id}/deposit",
             json=payload,
             headers={'X-Internal-Api-Key': INTERNAL_API_KEY},
             timeout=5

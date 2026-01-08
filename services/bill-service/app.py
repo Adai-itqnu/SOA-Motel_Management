@@ -245,7 +245,7 @@ def delete_bill(current_user, bill_id):
 
 # ============== Admin APIs ==============
 
-@app.route('/api/bills/generate-monthly', methods=['POST'])
+@app.route('/api/bills/generate', methods=['POST'])
 @token_required
 @admin_required
 # Manually trigger monthly bill generation (admin only)

@@ -1,376 +1,581 @@
-/**
- * User Home Page JavaScript
- */
-document.addEventListener("DOMContentLoaded", () => {
-  if (!Auth.checkAuth("user")) return;
+     let allRooms = [];
+      let currentRoom = null;
+      let currentImageIndex = 0;
+      let roomImages = [];
 
-  // Show VNPay result notice (if redirected back from VNPay)
-  renderVnpayResultNotice();
+      document.addEventListener("DOMContentLoaded", () => {
+        if (!Auth.isLoggedIn()) {
+          window.location.href = "/auth/login.html";
+          return;
+        }
 
-  // Load user info
-  loadUserInfo();
+        // Layout.js handles user info, we just need to wait for it
+        // then update welcomeName if it exists
+        setTimeout(() => {
+          const user = Auth.getUser();
+          const welcomeName = document.getElementById("welcomeName");
+          if (welcomeName && user) {
+            welcomeName.textContent =
+              user.fullname || user.name || user.username || "User";
+          }
+        }, 100);
 
-  // Auto-open edit profile modal when redirected from other pages
-  const params = new URLSearchParams(window.location.search);
-  if (params.get("edit") === "1") {
-    // Remove param to avoid reopening on refresh
-    params.delete("edit");
-    const newQs = params.toString();
-    const newUrl = `${window.location.pathname}${newQs ? `?${newQs}` : ""}${
-      window.location.hash || ""
-    }`;
-    window.history.replaceState({}, "", newUrl);
-    openProfileModal();
-  }
+        loadRooms();
+        initFilters();
+        checkVNPayResult();
+      });
 
-  // No contracts service wired yet
-  renderCurrentRoomPlaceholder();
-});
+      function checkVNPayResult() {
+        const params = new URLSearchParams(window.location.search);
+        const vnpayStatus = params.get("vnpay");
+        if (!vnpayStatus) return;
 
-function setVnpayNotice(noticeEl, { title, message, cls, baseInfo }) {
-  // Use horizontal banner style at top of page
-  const bgClass = cls.includes('green') ? 'bg-green-500' : 
-                  cls.includes('red') ? 'bg-red-500' : 
-                  cls.includes('amber') ? 'bg-amber-500' : 
-                  cls.includes('indigo') ? 'bg-indigo-500' : 'bg-gray-500';
-  
-  const iconName = cls.includes('green') ? 'check_circle' : 
-                   cls.includes('red') ? 'error' : 
-                   cls.includes('amber') ? 'warning' : 
-                   cls.includes('indigo') ? 'pending' : 'info';
+        const roomId = params.get("room_id");
 
-  noticeEl.className = `fixed top-20 left-1/2 -translate-x-1/2 z-50 max-w-2xl w-full px-4`;
-  noticeEl.style.transition = "transform 0.4s ease-out, opacity 0.4s ease-out";
-  noticeEl.style.transform = "translateY(-100%)";
-  noticeEl.style.opacity = "0";
-  
-  noticeEl.innerHTML = `
-    <div class="flex items-center justify-center gap-3 ${bgClass} text-white px-6 py-3 rounded-xl shadow-lg">
-      <span class="material-symbols-outlined text-xl">${iconName}</span>
-      <span class="font-medium">${title}</span>
-      <span class="text-white/90">${message}</span>
-      <button id="vnpayNoticeClose" class="ml-4 hover:bg-white/20 rounded-full p-1 transition-colors">
-        <span class="material-symbols-outlined text-lg">close</span>
-      </button>
-    </div>
-  `;
-  noticeEl.classList.remove("hidden");
+        // Clean URL
+        window.history.replaceState({}, "", "/user/home.html");
 
-  // Trigger slide-down animation
-  requestAnimationFrame(() => {
-    requestAnimationFrame(() => {
-      noticeEl.style.transform = "translateY(0)";
-      noticeEl.style.opacity = "1";
-    });
-  });
+        const notice = document.getElementById("vnpayNotice");
+        if (!notice) return;
 
-  document.getElementById("vnpayNoticeClose")?.addEventListener("click", () => {
-    // Slide out animation before hiding
-    noticeEl.style.transform = "translateY(-100%)";
-    noticeEl.style.opacity = "0";
-    setTimeout(() => {
-      noticeEl.classList.add("hidden");
-    }, 400);
-  });
+        let cfg = { 
+            title: "Thanh toán", 
+            msg: "", 
+            bgClass: "bg-green-500",
+            icon: "check_circle"
+        };
 
-  // Auto-hide after 8 seconds
-  setTimeout(() => {
-    if (!noticeEl.classList.contains("hidden")) {
-      noticeEl.style.transform = "translateY(-100%)";
-      noticeEl.style.opacity = "0";
-      setTimeout(() => {
-        noticeEl.classList.add("hidden");
-      }, 400);
-    }
-  }, 8000);
-}
+        if (vnpayStatus === "success") {
+            cfg = {
+              title: "Thanh toán thành công!",
+              msg: "Giao dịch đã được xác nhận. Phòng đã được giữ cho bạn.",
+              bgClass: "bg-green-500",
+              icon: "check_circle"
+            };
+        } else if (vnpayStatus === "cancel") {
+            cfg = {
+              title: "Thanh toán bị hủy",
+              msg: "Bạn đã hủy giao dịch thanh toán.",
+              bgClass: "bg-amber-500",
+              icon: "warning"
+            };
+        } else if (vnpayStatus === "pending") {
+            cfg = {
+              title: "Đang xử lý",
+              msg: "Giao dịch đang chờ ngân hàng xác nhận...",
+              bgClass: "bg-blue-500",
+              icon: "pending"
+            };
+        } else {
+             cfg = {
+              title: "Thanh toán thất bại",
+              msg: "Có lỗi xảy ra trong quá trình thanh toán.",
+              bgClass: "bg-red-500",
+              icon: "error"
+            };
+        }
 
-async function pollVnpayVerification({
-  noticeEl,
-  paymentId,
-  bookingId,
-  baseInfo,
-}) {
-  if (!paymentId) return;
+        // Use horizontal banner style at top center
+        notice.className = `fixed top-20 left-1/2 -translate-x-1/2 z-50 max-w-2xl w-full px-4`;
+        notice.style.transition = "transform 0.4s ease-out, opacity 0.4s ease-out";
+        notice.style.transform = "translateY(-100%)";
+        notice.style.opacity = "0";
+        
+        notice.innerHTML = `
+            <div class="flex items-center justify-center gap-3 ${cfg.bgClass} text-white px-6 py-3 rounded-xl shadow-lg">
+                <span class="material-symbols-outlined text-xl">${cfg.icon}</span>
+                <span class="font-medium">${cfg.title}</span>
+                <span class="text-white/90">${cfg.msg}</span>
+                <button onclick="this.closest('#vnpayNotice').style.transform='translateY(-100%)'; this.closest('#vnpayNotice').style.opacity='0'; setTimeout(() => this.closest('#vnpayNotice').classList.add('hidden'), 400);" class="ml-4 hover:bg-white/20 rounded-full p-1 transition-colors">
+                    <span class="material-symbols-outlined text-lg">close</span>
+                </button>
+            </div>
+        `;
+        notice.classList.remove("hidden");
+        
+        // Slide down animation
+        setTimeout(() => {
+            notice.style.transform = "translateY(0)";
+            notice.style.opacity = "1";
+        }, 100);
 
-  const maxAttempts = 6; // ~12s total
-  const delayMs = 2000;
-
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    // If user closed the notice, stop polling.
-    if (noticeEl.classList.contains("hidden")) return;
-
-    const res = await API.get(
-      `/payments/vnpay/verify/${encodeURIComponent(paymentId)}`
-    );
-    if (res.ok) {
-      const status = res.data?.status;
-      if (status === "completed") {
-        setVnpayNotice(noticeEl, {
-          title: "Thanh toán thành công",
-          message:
-            "Giao dịch đã được xác minh với VNPay. Trạng thái booking sẽ được cập nhật ngay.",
-          cls: "bg-green-50 border border-green-200 text-green-800",
-          baseInfo,
-        });
-        return;
+        // Auto close after 8s
+        setTimeout(() => {
+            notice.style.transform = "translateY(-100%)";
+            notice.style.opacity = "0";
+            setTimeout(() => {
+                notice.classList.add("hidden");
+            }, 400);
+        }, 8000);
       }
 
-      // If QueryDR confirms failure codes, show failed.
-      const txnStatus = res.data?.transaction_status;
-      const rspCode = res.data?.provider_response_code;
-      if (txnStatus && txnStatus !== "00") {
-        setVnpayNotice(noticeEl, {
-          title: "Thanh toán chưa được xác nhận",
-          message: `Trạng thái giao dịch: ${txnStatus}. Vui lòng thử lại hoặc liên hệ admin.`,
-          cls: "bg-red-50 border border-red-200 text-red-800",
-          baseInfo,
-        });
-        return;
+
+      function initFilters() {
+        const chips = document.querySelectorAll("#filterChips .chip");
+        chips.forEach((chip) =>
+          chip.addEventListener("click", () => {
+            chips.forEach((c) => c.classList.remove("active"));
+            chip.classList.add("active");
+            filterRooms();
+          })
+        );
       }
-      if (rspCode && rspCode !== "00") {
-        setVnpayNotice(noticeEl, {
-          title: "Thanh toán chưa được xác nhận",
-          message: `Mã phản hồi: ${rspCode}. Vui lòng thử lại hoặc liên hệ admin.`,
-          cls: "bg-red-50 border border-red-200 text-red-800",
-          baseInfo,
-        });
-        return;
+
+      async function loadRooms() {
+        try {
+          const res = await API.get("/rooms");
+          if (res.ok) {
+            allRooms = res.data.rooms || res.data || [];
+            filterRooms();
+          } else {
+            showError("Không thể tải danh sách phòng");
+          }
+        } catch (error) {
+          console.error("Load rooms error:", error);
+          showError("Lỗi kết nối server");
+        }
       }
-    }
 
-    // Still pending; update message with attempt counter.
-    setVnpayNotice(noticeEl, {
-      title: "Đang xác minh thanh toán",
-      message: `Hệ thống đang xác minh giao dịch với VNPay (lần ${attempt}/${maxAttempts})...`,
-      cls: "bg-indigo-50 border border-indigo-200 text-indigo-800",
-      baseInfo,
-    });
+      function filterRooms() {
+        const activeChip = document.querySelector("#filterChips .chip.active");
+        const filter = activeChip ? activeChip.dataset.filter : "all";
+        let filtered = allRooms;
+        if (filter === "available")
+          filtered = filtered.filter((r) => r.status === "available");
+        if (filter === "under3")
+          filtered = filtered.filter((r) => (r.price || 0) < 3000000);
+        if (filter === "3to5")
+          filtered = filtered.filter(
+            (r) => (r.price || 0) >= 3000000 && (r.price || 0) <= 5000000
+          );
+        if (filter === "balcony")
+          filtered = filtered.filter((r) =>
+            (r.amenities || []).includes("balcony")
+          );
+        renderRooms(filtered);
+      }
 
-    await new Promise((r) => setTimeout(r, delayMs));
-  }
+      function renderRooms(rooms) {
+        document.getElementById(
+          "roomCount"
+        ).textContent = `${rooms.length} phòng`;
+        if (!rooms.length) {
+          document.getElementById("roomsGrid").innerHTML = `
+                        <div class="col-span-full text-center py-12 text-gray-500">Không tìm thấy phòng nào</div>
+                    `;
+          return;
+        }
 
-  // Timeout: keep pending but give a clear next step.
-  setVnpayNotice(noticeEl, {
-    title: "Đang xác minh thanh toán",
-    message:
-      "Chưa xác minh được trong thời gian ngắn. Vui lòng đợi thêm và tải lại, hoặc kiểm tra lại trong lịch sử đặt phòng.",
-    cls: "bg-indigo-50 border border-indigo-200 text-indigo-800",
-    baseInfo,
-  });
-}
+        document.getElementById("roomsGrid").innerHTML = rooms
+          .map((room) => {
+            const firstImage =
+              room.images?.[0] || "/assets/images/room-placeholder.svg";
+            const available = room.status === "available";
+            const statusClass = available
+              ? "bg-emerald-100 text-emerald-700"
+              : "bg-gray-200 text-gray-600";
+            const statusText = available ? "Còn trống" : "Đã thuê";
+            return `
+                        <div onclick="viewRoom('${
+                          room._id
+                        }')" class="group cursor-pointer flex flex-col rounded-2xl bg-white shadow-sm border border-gray-100 overflow-hidden transition hover:shadow-glow">
+                            <div class="relative aspect-[4/3] bg-gray-100 overflow-hidden">
+                                <div class="absolute inset-0 bg-cover bg-center transition-transform duration-500 group-hover:scale-105" style="background-image:url('${firstImage}')"></div>
+                                <div class="absolute top-3 right-3 ${statusClass} text-xs font-bold px-3 py-1 rounded-full shadow-sm">${statusText}</div>
+                            </div>
+                            <div class="p-4 flex flex-col gap-3 flex-1">
+                                <div class="flex items-center gap-2 text-xs text-gray-500">
+                                    <span class="rounded-full bg-gray-100 px-2 py-1">${
+                                      room.code || room._id || "---"
+                                    }</span>
+                                    <span class="rounded-full bg-gray-100 px-2 py-1">Tầng ${
+                                      room.floor || "--"
+                                    }</span>
+                                    <span class="rounded-full bg-gray-100 px-2 py-1">${
+                                      room.area || "--"
+                                    } m²</span>
+                                </div>
+                                <div class="flex items-start justify-between gap-3">
+                                    <div>
+                                        <h3 class="font-black text-lg text-[#1b0e0e] line-clamp-1">${
+                                          room.name || "Phòng"
+                                        }</h3>
+                                        <p class="text-sm text-gray-500 mt-1 line-clamp-2">${
+                                          room.description ||
+                                          "Phòng mới, sạch sẽ và đầy đủ tiện ích."
+                                        }</p>
+                                    </div>
+                                    <div class="text-right">
+                                        <div class="text-2xl font-bold text-primary">${formatCurrency(
+                                          room.price
+                                        )}</div>
+                                        <div class="text-xs text-gray-500">/ tháng</div>
+                                    </div>
+                                </div>
+                                <div class="flex items-center gap-3 text-gray-500 text-sm">
+                                    ${(room.amenities || [])
+                                      .slice(0, 3)
+                                      .map(
+                                        (am) =>
+                                          `<span class="flex items-center gap-1"><span class="material-symbols-outlined text-[18px] text-primary">${amenityIcon(
+                                            am
+                                          )}</span>${amenityLabel(am)}</span>`
+                                      )
+                                      .join("")}
+                                </div>
+                                <div class="pt-2">
+                                    <span class="inline-flex items-center justify-center rounded-lg bg-primary text-white px-4 py-2 text-sm font-semibold transition hover:brightness-105">Xem chi tiết</span>
+                                </div>
+                            </div>
+                        </div>`;
+          })
+          .join("");
+      }
 
-function renderVnpayResultNotice() {
-  const noticeEl = document.getElementById("vnpayNotice");
-  if (!noticeEl) return;
+      function amenityLabel(key) {
+        const labels = {
+          wifi: "Wifi",
+          air_conditioner: "Máy lạnh",
+          water_heater: "Nước nóng",
+          washing_machine: "Máy giặt",
+          fridge: "Tủ lạnh",
+          kitchen: "Bếp",
+          private_wc: "WC riêng",
+          balcony: "Ban công",
+          parking: "Để xe",
+          security: "Bảo vệ",
+          elevator: "Thang máy",
+          furniture: "Nội thất",
+          bed: "Giường",
+        };
+        return labels[key] || key;
+      }
 
-  const params = new URLSearchParams(window.location.search);
-  const vnpay = params.get("vnpay");
-  if (!vnpay) return;
+      function amenityIcon(key) {
+        const map = {
+          wifi: "wifi",
+          air_conditioner: "ac_unit",
+          water_heater: "water_heater",
+          washing_machine: "local_laundry_service",
+          fridge: "kitchen",
+          kitchen: "restaurant_menu",
+          private_wc: "bathtub",
+          balcony: "deck",
+          parking: "two_wheeler",
+          security: "shield",
+          elevator: "elevator",
+          furniture: "weekend",
+          bed: "king_bed",
+        };
+        return map[key] || "check_circle";
+      }
 
-  const paymentId = params.get("payment_id") || "";
-  const bookingId = params.get("booking_id") || "";
-  const code = params.get("code") || "";
+      function viewRoom(roomId) {
+        currentRoom = allRooms.find((r) => r._id === roomId);
+        if (!currentRoom) return;
 
-  const baseInfo = [
-    bookingId ? `Booking: ${bookingId}` : null,
-    paymentId ? `Payment: ${paymentId}` : null,
-  ]
-    .filter(Boolean)
-    .join(" • ");
+        roomImages = currentRoom.images?.length
+          ? currentRoom.images
+          : ["/assets/images/room-placeholder.svg"];
+        currentImageIndex = 0;
+        updateCarousel();
 
-  let title = "";
-  let message = "";
-  let cls = "";
+        document.getElementById("modalRoomName").textContent = currentRoom.name;
+        document.getElementById("modalRoomType").textContent = getRoomTypeLabel(
+          currentRoom.room_type
+        );
+        document.getElementById("modalRoomPrice").textContent = formatCurrency(
+          currentRoom.price
+        );
+        document.getElementById("modalRoomArea").textContent = `${
+          currentRoom.area || "--"
+        } m²`;
+        document.getElementById("modalRoomFloor").textContent = `Tầng ${
+          currentRoom.floor || "--"
+        }`;
+        document.getElementById(
+          "modalElectricPrice"
+        ).textContent = `${formatNumber(currentRoom.electricity_price || 0)} đ`;
+        document.getElementById(
+          "modalWaterPrice"
+        ).textContent = `${formatNumber(currentRoom.water_price || 0)} đ`;
 
-  if (vnpay === "success") {
-    title = "Thanh toán thành công";
-    message =
-      "Hệ thống đã ghi nhận kết quả. Nếu trạng thái chưa cập nhật ngay, vui lòng đợi vài giây rồi tải lại.";
-    cls = "bg-green-50 border border-green-200 text-green-800";
-  } else if (vnpay === "pending") {
-    title = "Đang xác minh thanh toán";
-    message =
-      "Hệ thống đang xác minh giao dịch với VNPay. Vui lòng đợi vài giây rồi tải lại để cập nhật trạng thái.";
-    cls = "bg-indigo-50 border border-indigo-200 text-indigo-800";
-  } else if (vnpay === "cancel") {
-    title = "Bạn đã hủy thanh toán";
-    message = "Bạn có thể thực hiện thanh toán lại bất cứ lúc nào.";
-    cls = "bg-amber-50 border border-amber-200 text-amber-800";
-  } else if (vnpay === "failed") {
-    title = "Thanh toán thất bại";
-    message = code ? `Mã lỗi: ${code}. Vui lòng thử lại.` : "Vui lòng thử lại.";
-    cls = "bg-red-50 border border-red-200 text-red-800";
-  } else if (vnpay === "error") {
-    title = "Có lỗi khi xử lý thanh toán";
-    message = code ? `Mã lỗi: ${code}. Vui lòng thử lại.` : "Vui lòng thử lại.";
-    cls = "bg-red-50 border border-red-200 text-red-800";
-  } else {
-    // Unknown status
-    title = "Trạng thái thanh toán";
-    message = "Đã nhận kết quả từ VNPay.";
-    cls = "bg-gray-50 border border-gray-200 text-gray-800";
-  }
+        const statusEl = document.getElementById("modalRoomStatus");
+        if (currentRoom.status === "available") {
+          statusEl.className =
+            "inline-block px-2 py-1 rounded bg-green-100 text-green-700 text-xs font-bold mb-2";
+          statusEl.textContent = "Đang trống";
+        } else {
+          statusEl.className =
+            "inline-block px-2 py-1 rounded bg-gray-200 text-gray-700 text-xs font-bold mb-2";
+          statusEl.textContent = "Đã thuê";
+        }
 
-  setVnpayNotice(noticeEl, { title, message, cls, baseInfo });
+        const amenities = currentRoom.amenities || [];
+        const labels = {
+          wifi: "📶 WiFi",
+          air_conditioner: "❄️ Máy lạnh",
+          water_heater: "🚿 Nước nóng",
+          washing_machine: "🧺 Máy giặt",
+          fridge: "🧊 Tủ lạnh",
+          kitchen: "🍳 Bếp",
+          private_wc: "🚽 WC riêng",
+          balcony: "🌇 Ban công",
+          parking: "🏍️ Để xe",
+          security: "🔒 Bảo vệ",
+          elevator: "🛗 Thang máy",
+          furniture: "🛋️ Nội thất",
+        };
+        document.getElementById("amenitiesList").innerHTML = amenities.length
+          ? amenities
+              .map(
+                (a) =>
+                  `<span class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-gray-200 bg-gray-50 text-xs font-medium text-gray-600">${
+                    labels[a] || a
+                  }</span>`
+              )
+              .join("")
+          : '<span class="text-gray-400 text-sm">Không có thông tin</span>';
 
-  // Remove params so refresh doesn't show the notice again
-  ["vnpay", "payment_id", "booking_id", "code"].forEach((k) =>
-    params.delete(k)
-  );
-  const newQs = params.toString();
-  const newUrl = `${window.location.pathname}${newQs ? `?${newQs}` : ""}${
-    window.location.hash || ""
-  }`;
-  window.history.replaceState({}, "", newUrl);
+        document.getElementById("descriptionText").textContent =
+          currentRoom.description || "Không có mô tả";
 
-  // Professional touch: auto-verify when pending.
-  if (vnpay === "pending" && paymentId) {
-    pollVnpayVerification({ noticeEl, paymentId, bookingId, baseInfo });
-  }
-}
+        if (currentRoom.status === "available") {
+          const deposit = formatCurrency(currentRoom.deposit || 0);
+          document.getElementById("bookingSection").innerHTML = `
+                        <div class="bg-gray-50 rounded-xl p-4 mb-3 flex items-center justify-between">
+                            <div>
+                                <p class="text-sm text-gray-600">Tiền cọc giữ phòng</p>
+                                <p class="text-lg font-bold text-primary">${deposit}</p>
+                            </div>
+                            <span class="text-xs text-gray-500">Thanh toán qua VNPay</span>
+                        </div>
+                        <div id="bookingError" class="hidden bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-xl text-sm mb-3"></div>
+                        <div class="flex gap-3">
+                            <button id="bookBtn" onclick="openBookingModal('${currentRoom._id}')" class="flex-1 py-3 px-4 rounded-lg bg-primary hover:bg-primary-hover text-white font-bold text-sm shadow-glow transition active:scale-[0.98]">
+                                <span id="bookBtnText">Đặt phòng ngay</span>
+                            </button>
+                            <button class="px-5 py-3 rounded-lg border border-gray-200 hover:bg-gray-50 text-gray-700 font-semibold text-sm">Liên hệ</button>
+                        </div>`;
+        } else {
+          document.getElementById("bookingSection").innerHTML = `
+                        <div class="bg-gray-100 rounded-xl p-4 text-center text-gray-500">Phòng này hiện đã có người thuê</div>`;
+        }
 
-function loadUserInfo() {
-  const user = Auth.getUser();
-  const displayName = user.fullname || user.name || user.username || "User";
+        document.getElementById("roomModal").classList.remove("hidden");
+      }
 
-  UI.setText("userName", displayName);
-  UI.setText("welcomeName", displayName);
-  document.getElementById("userAvatar").textContent = displayName
-    .charAt(0)
-    .toUpperCase();
-  UI.setText("profileName", displayName);
-  UI.setText("profileEmail", user.email || "--");
-  UI.setText("profilePhone", user.phone || "--");
-  UI.setText("profileIdCard", user.id_card || "--");
-}
+      function updateCarousel() {
+        document.getElementById("carouselImage").src =
+          roomImages[currentImageIndex];
+        document.getElementById("imageIndicators").innerHTML = roomImages
+          .map(
+            (_, idx) => `
+                    <button onclick="goToImage(${idx})" class="w-2 h-2 rounded-full ${
+              idx === currentImageIndex
+                ? "bg-white"
+                : "bg-white/50 hover:bg-white"
+            } transition"></button>
+                `
+          )
+          .join("");
+      }
+      function prevImage() {
+        currentImageIndex =
+          (currentImageIndex - 1 + roomImages.length) % roomImages.length;
+        updateCarousel();
+      }
+      function nextImage() {
+        currentImageIndex = (currentImageIndex + 1) % roomImages.length;
+        updateCarousel();
+      }
+      function goToImage(idx) {
+        currentImageIndex = idx;
+        updateCarousel();
+      }
+      function closeRoomModal() {
+        document.getElementById("roomModal").classList.add("hidden");
+      }
 
-// Keep legacy function name used in older HTML (if any)
-function editProfile() {
-  openProfileModal();
-}
+      // ============== Booking Modal Functions ==============
+      let bookingRoomId = null;
+      let cachedUserInfo = null;
 
-function openProfileModal() {
-  const modal = document.getElementById("profileModal");
-  if (!modal) return;
-  UI.hideError("profileFormError");
-  UI.hideError("profileFormSuccess");
-  modal.classList.remove("hidden");
-  loadProfileIntoForm();
-}
+      async function openBookingModal(roomId) {
+        bookingRoomId = roomId;
+        const room = allRooms.find((r) => r._id === roomId);
+        if (!room) return;
 
-function closeProfileModal() {
-  document.getElementById("profileModal")?.classList.add("hidden");
-}
+        // Set room info in modal
+        document.getElementById("bookingRoomName").textContent = room.name || "Phòng";
+        document.getElementById("bookingRoomPrice").textContent = formatCurrency(room.price);
+        document.getElementById("bookingDepositAmount").textContent = formatCurrency(room.deposit || 0);
 
-async function loadProfileIntoForm() {
-  // Use server truth if possible
-  const res = await API.get("/users/me");
-  const user = res.ok ? res.data : Auth.getUser();
+        // Set min date to today
+        const today = new Date().toISOString().split("T")[0];
+        const dateInput = document.getElementById("bookingCheckInDate");
+        dateInput.min = today;
+        dateInput.value = today;
 
-  // Sync local storage user info
-  if (res.ok && user) {
-    const existing = Auth.getUser();
-    Auth.setUser({ ...existing, ...user });
-    loadUserInfo();
-  }
+        // Load user info
+        document.getElementById("bookingFullName").value = "Đang tải...";
+        document.getElementById("bookingPhone").value = "Đang tải...";
 
-  const fullnameEl = document.getElementById("profileFullnameInput");
-  const phoneEl = document.getElementById("profilePhoneInput");
-  const idCardEl = document.getElementById("profileIdCardInput");
-  const addressEl = document.getElementById("profileAddressInput");
+        try {
+          const userRes = await API.get("/users/me");
+          if (userRes.ok) {
+            cachedUserInfo = userRes.data;
+            document.getElementById("bookingFullName").value = cachedUserInfo.fullname || cachedUserInfo.name || cachedUserInfo.username || "";
+            document.getElementById("bookingPhone").value = cachedUserInfo.phone || "";
+          } else {
+            document.getElementById("bookingFullName").value = "Lỗi tải thông tin";
+            document.getElementById("bookingPhone").value = "Lỗi tải thông tin";
+          }
+        } catch (e) {
+          console.error("Load user info error:", e);
+          document.getElementById("bookingFullName").value = "Lỗi kết nối";
+          document.getElementById("bookingPhone").value = "Lỗi kết nối";
+        }
 
-  if (fullnameEl) fullnameEl.value = user?.fullname || "";
-  if (phoneEl) phoneEl.value = user?.phone || "";
-  if (idCardEl) idCardEl.value = user?.id_card || "";
-  if (addressEl) addressEl.value = user?.address || "";
-}
+        // Reset form state
+        document.getElementById("bookingFormError").classList.add("hidden");
+        document.getElementById("confirmBookingBtn").disabled = false;
+        document.getElementById("confirmBookingBtnText").textContent = "Thanh toán cọc";
 
-async function handleProfileSubmit(e) {
-  e.preventDefault();
-  UI.hideError("profileFormError");
-  UI.hideError("profileFormSuccess");
+        // Show modal
+        document.getElementById("bookingModal").classList.remove("hidden");
+      }
 
-  const fullname = UI.getValue("profileFullnameInput");
-  const phone = UI.getValue("profilePhoneInput");
-  const idCard = UI.getValue("profileIdCardInput");
-  const address = UI.getValue("profileAddressInput");
+      function closeBookingModal() {
+        document.getElementById("bookingModal").classList.add("hidden");
+        bookingRoomId = null;
+      }
 
-  if (!fullname) {
-    UI.showError("profileFormError", "Vui lòng nhập họ và tên.");
-    return;
-  }
+      // Form submission
+      document.addEventListener("DOMContentLoaded", () => {
+        const bookingForm = document.getElementById("bookingForm");
+        if (bookingForm) {
+          bookingForm.addEventListener("submit", handleBookingFormSubmit);
+        }
+      });
 
-  const submitBtn = document.getElementById("profileSaveBtn");
-  if (submitBtn) submitBtn.disabled = true;
+      async function handleBookingFormSubmit(e) {
+        e.preventDefault();
+        const btn = document.getElementById("confirmBookingBtn");
+        const btnText = document.getElementById("confirmBookingBtnText");
+        const errorDiv = document.getElementById("bookingFormError");
 
-  const res = await API.put("/users/me", {
-    fullname,
-    phone,
-    id_card: idCard,
-    address,
-  });
+        // Validate
+        const checkInDate = document.getElementById("bookingCheckInDate").value;
+        if (!checkInDate) {
+          showBookingFormError("Vui lòng chọn ngày nhận phòng");
+          return;
+        }
 
-  if (!res.ok) {
-    UI.showError(
-      "profileFormError",
-      res.data?.message || "Không thể cập nhật thông tin."
-    );
-    if (submitBtn) submitBtn.disabled = false;
-    return;
-  }
+        // Check user info
+        if (!cachedUserInfo) {
+          showBookingFormError("Không thể xác thực người dùng. Vui lòng thử lại.");
+          return;
+        }
 
-  UI.showError("profileFormSuccess", "Cập nhật thành công!");
-  const updated = res.data?.user;
-  if (updated) {
-    const existing = Auth.getUser();
-    Auth.setUser({ ...existing, ...updated });
-    loadUserInfo();
-  }
+        const hasPhone = cachedUserInfo.phone && cachedUserInfo.phone.trim();
+        const hasCCCD = cachedUserInfo.id_card && cachedUserInfo.id_card.trim();
+        if (!hasPhone || !hasCCCD) {
+          const missing = [];
+          if (!hasPhone) missing.push("số điện thoại");
+          if (!hasCCCD) missing.push("CCCD/CMND");
+          showBookingFormError(`Bạn cần cập nhật ${missing.join(" và ")} trước khi đặt phòng`);
+          if (confirm("Đến trang cập nhật thông tin cá nhân?")) {
+            window.location.href = "/user/profile.html";
+          }
+          return;
+        }
 
-  if (submitBtn) submitBtn.disabled = false;
-  // Close shortly to confirm UX
-  setTimeout(() => closeProfileModal(), 600);
-}
+        // Check room deposit
+        const room = allRooms.find((r) => r._id === bookingRoomId);
+        if (!room || (room.deposit || 0) <= 0) {
+          showBookingFormError("Phòng chưa được cấu hình tiền cọc");
+          return;
+        }
 
-// Wire profile modal events
-document.addEventListener("DOMContentLoaded", () => {
-  document
-    .getElementById("profileCloseBtn")
-    ?.addEventListener("click", closeProfileModal);
-  document
-    .getElementById("profileCancelBtn")
-    ?.addEventListener("click", closeProfileModal);
-  document
-    .getElementById("profileForm")
-    ?.addEventListener("submit", handleProfileSubmit);
+        // Start payment process
+        btn.disabled = true;
+        btnText.textContent = "Đang xử lý...";
+        errorDiv.classList.add("hidden");
 
-  const modal = document.getElementById("profileModal");
-  modal?.addEventListener("click", (e) => {
-    if (e.target && e.target.id === "profileModal") closeProfileModal();
-  });
+        try {
+          btnText.textContent = "Đang chuyển đến VNPay...";
+          const paymentRes = await API.post("/vnpay/room-deposit", {
+            room_id: bookingRoomId,
+            check_in_date: checkInDate
+          });
 
-  document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape") closeProfileModal();
-  });
-});
+          if (!paymentRes.ok || !paymentRes.data?.payment_url) {
+            showBookingFormError(paymentRes.data?.message || "Không thể tạo link thanh toán");
+            resetBookingFormBtn();
+            return;
+          }
 
-// Expose for menu.js
-window.openProfileModal = openProfileModal;
+          window.location.href = paymentRes.data.payment_url;
+        } catch (error) {
+          console.error("Booking error:", error);
+          showBookingFormError("Lỗi kết nối server");
+          resetBookingFormBtn();
+        }
+      }
 
-function renderCurrentRoomPlaceholder() {
-  UI.setHTML(
-    "currentRoom",
-    `
-        <div class="text-center py-8">
-            <svg class="w-16 h-16 mx-auto mb-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"></path>
-            </svg>
-            <p class="text-gray-500 mb-4">Chưa có thông tin phòng đang thuê</p>
-            <a href="./rooms.html" class="inline-block px-6 py-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors">
-                Xem phòng trống
-            </a>
-        </div>
-    `
-  );
-}
+      function showBookingFormError(msg) {
+        const errorDiv = document.getElementById("bookingFormError");
+        if (errorDiv) {
+          errorDiv.textContent = msg;
+          errorDiv.classList.remove("hidden");
+        }
+      }
+
+      function resetBookingFormBtn() {
+        const btn = document.getElementById("confirmBookingBtn");
+        const btnText = document.getElementById("confirmBookingBtnText");
+        if (btn) btn.disabled = false;
+        if (btnText) btnText.textContent = "Thanh toán cọc";
+      }
+
+      // Keep old functions for backward compatibility
+      function showBookingError(msg) {
+        const errorDiv = document.getElementById("bookingError");
+        if (errorDiv) {
+          errorDiv.textContent = msg;
+          errorDiv.classList.remove("hidden");
+        }
+      }
+      function resetBookBtn() {
+        const btn = document.getElementById("bookBtn");
+        const btnText = document.getElementById("bookBtnText");
+        if (btn) btn.disabled = false;
+        if (btnText) btnText.textContent = "Đặt phòng ngay";
+      }
+      function showError(msg) {
+        document.getElementById(
+          "roomsGrid"
+        ).innerHTML = `<div class="col-span-full text-center py-12 text-red-500">${msg}</div>`;
+      }
+      function getRoomTypeLabel(type) {
+        const types = {
+          single: "Phòng đơn",
+          double: "Phòng đôi",
+          studio: "Studio",
+          apartment: "Căn hộ",
+        };
+        return types[type] || type || "Khác";
+      }
+      function formatCurrency(amount) {
+        return new Intl.NumberFormat("vi-VN").format(amount || 0) + "đ";
+      }
+      function formatNumber(num) {
+        return new Intl.NumberFormat("vi-VN").format(num || 0);
+      }
+      function logout() {
+        Auth.logout();
+      }
+      document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") closeRoomModal();
+      });

@@ -7,10 +7,10 @@ import atexit
 from config import Config
 from model import notifications_collection
 from decorators import token_required, admin_required, internal_api_required
-from services import fetch_unpaid_bills
 from utils import (
     get_timestamp, create_notification_document,
-    format_notification, get_user_id, check_duplicate_notification
+    format_notification, get_user_id, check_duplicate_notification,
+    fetch_unpaid_bills
 )
 from service_registry import register_service, deregister_service
 
@@ -169,7 +169,7 @@ def create_welcome_notification():
 
 # ============== User API: Report Issue ==============
 
-@app.route('/api/notifications/report-issue', methods=['POST'])
+@app.route('/api/notifications/issue', methods=['POST'])
 @token_required
 def report_issue(current_user):
 # User reports an issue - creates notification for admin
@@ -318,7 +318,7 @@ def mark_all_as_read(current_user):
 
 # ============== Internal Task: Rent Reminders ==============
 
-@app.route('/api/notifications/tasks/rent-reminders', methods=['POST'])
+@app.route('/api/notifications/rent-reminders', methods=['POST'])
 @internal_api_required
 def run_rent_reminders():
 # Generate rent reminder notifications

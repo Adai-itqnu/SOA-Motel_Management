@@ -19,9 +19,9 @@ from utils import (
     create_booking_document,
     create_checkin_booking_document,
     create_booking_from_payment_data,
-    find_pending_booking
+    find_pending_booking,
+    get_service_url
 )
-from services import get_service_url
 from service_registry import register_service, deregister_service
 import requests
 
@@ -105,7 +105,7 @@ def get_booking(current_user, booking_id):
     return jsonify(format_booking_response(booking)), 200
 
 
-@app.route('/api/bookings/<booking_id>/deposit-status', methods=['PUT'])
+@app.route('/api/bookings/<booking_id>/deposit', methods=['PUT'])
 @internal_api_required
 # Internal endpoint for payment-service to update deposit status
 def update_deposit_status_internal(booking_id):
@@ -230,7 +230,7 @@ def check_in_booking(current_user, booking_id):
     }), 200
 
 
-@app.route('/api/bookings/check-in-from-payment', methods=['POST'])
+@app.route('/api/bookings/checkin-payment', methods=['POST'])
 @token_required
 # Check-in directly from payment when no booking record exists
 def check_in_from_payment(current_user):

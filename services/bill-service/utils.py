@@ -179,25 +179,23 @@ def can_access_bill(current_user, bill):
 # ============== Service Communication ==============
 
 def get_service_url(service_name):
+    """Get service URL dynamically from Consul."""
     try:
         consul_url = f"http://{CONSUL_HOST}:{CONSUL_PORT}/v1/catalog/service/{service_name}"
         response = requests.get(consul_url, timeout=5)
         if response.ok and response.json():
             service = response.json()[0]
             host = service.get('ServiceAddress') or service.get('Address') or service_name
-            return f"http://{host}:{service['ServicePort']}"
-        
-        # Fallback to predefined ports if Consul fails
-        service_ports = {
-            'notification-service': 5010,
-        }
-        port = service_ports.get(service_name, 5001)
-        return f"http://{service_name}:{port}"
+            port = service.get('ServicePort')
+            if host and port:
+                return f"http://{host}:{port}"
     except Exception as e:
-        print(f"Error getting service URL: {e}")
-        service_ports = {'notification-service': 5010}
-        port = service_ports.get(service_name, 5001)
-        return f"http://{service_name}:{port}"
+        print(f"[Consul] Error getting {service_name} URL: {e}")
+    
+    # Fallback: use service name in Docker network with env var port
+    import os
+    fallback_port = os.getenv(f"{service_name.upper().replace('-', '_')}_PORT", "80")
+    return f"http://{service_name}:{fallback_port}"
 
 
 def send_notification(user_id, title, message, notification_type, metadata=None):

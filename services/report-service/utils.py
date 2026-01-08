@@ -1,7 +1,115 @@
 # Report Service - Utility Functions
 import datetime
+import os
+import requests
 from model import bills_collection
+from config import CONSUL_HOST, CONSUL_PORT
 
+
+# ============== Service Discovery ==============
+
+def get_service_url(service_name):
+    """Get service URL dynamically from Consul."""
+    try:
+        consul_url = f"http://{CONSUL_HOST}:{CONSUL_PORT}/v1/catalog/service/{service_name}"
+        response = requests.get(consul_url, timeout=5)
+        if response.ok and response.json():
+            service = response.json()[0]
+            host = service.get('ServiceAddress') or service.get('Address') or service_name
+            port = service.get('ServicePort')
+            if host and port:
+                return f"http://{host}:{port}"
+    except Exception as e:
+        print(f"[Consul] Error getting {service_name} URL: {e}")
+    
+    fallback_port = os.getenv(f"{service_name.upper().replace('-', '_')}_PORT", "80")
+    return f"http://{service_name}:{fallback_port}"
+
+
+# ============== External Service Calls ==============
+
+def get_room_stats(token):
+    """Get room statistics from room-service."""
+    try:
+        url = get_service_url('room-service')
+        headers = {'Authorization': token} if token else {}
+        response = requests.get(f"{url}/api/rooms/stats", headers=headers, timeout=10)
+        if response.ok:
+            return response.json()
+    except Exception as e:
+        print(f"Error getting room stats: {e}")
+    return None
+
+
+def get_contracts(token, status=None):
+    """Get contracts from contract-service."""
+    try:
+        url = get_service_url('contract-service')
+        headers = {'Authorization': token} if token else {}
+        endpoint = f"{url}/api/contracts"
+        if status:
+            endpoint += f"?status={status}"
+        response = requests.get(endpoint, headers=headers, timeout=10)
+        if response.ok:
+            return response.json()
+    except Exception as e:
+        print(f"Error getting contracts: {e}")
+    return None
+
+
+def get_contract_detail(contract_id, token):
+    """Get contract detail from contract-service."""
+    try:
+        url = get_service_url('contract-service')
+        headers = {'Authorization': token} if token else {}
+        response = requests.get(f"{url}/api/contracts/{contract_id}", headers=headers, timeout=10)
+        if response.ok:
+            return response.json()
+    except Exception as e:
+        print(f"Error getting contract detail: {e}")
+    return None
+
+
+def get_room_contracts(room_id, token):
+    """Get contracts for a specific room."""
+    try:
+        url = get_service_url('contract-service')
+        headers = {'Authorization': token} if token else {}
+        response = requests.get(f"{url}/api/contracts?room_id={room_id}", headers=headers, timeout=10)
+        if response.ok:
+            return response.json()
+    except Exception as e:
+        print(f"Error getting room contracts: {e}")
+    return None
+
+
+def get_room_detail(room_id, token):
+    """Get room detail from room-service."""
+    try:
+        url = get_service_url('room-service')
+        headers = {'Authorization': token} if token else {}
+        response = requests.get(f"{url}/api/rooms/{room_id}", headers=headers, timeout=10)
+        if response.ok:
+            return response.json()
+    except Exception as e:
+        print(f"Error getting room detail: {e}")
+    return None
+
+
+def get_payments(token, status=None):
+    """Get payments from payment-service."""
+    try:
+        url = get_service_url('payment-service')
+        headers = {'Authorization': token} if token else {}
+        endpoint = f"{url}/api/payments"
+        if status:
+            endpoint += f"?status={status}"
+        response = requests.get(endpoint, headers=headers, timeout=10)
+        if response.ok:
+            return response.json()
+    except Exception as e:
+        print(f"Error getting payments: {e}")
+    return None
 
 def get_timestamp():
     return datetime.datetime.utcnow().isoformat()

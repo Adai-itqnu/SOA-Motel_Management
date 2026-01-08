@@ -8,7 +8,6 @@ from config import Config
 from model import contracts_collection
 from decorators import token_required, admin_required, internal_api_required
 from service_registry import register_service, deregister_service
-from services import get_service_url
 from utils import (
     get_timestamp,
     generate_contract_id,
@@ -19,7 +18,8 @@ from utils import (
     check_existing_active_contract,
     check_contract_exists,
     create_contract_document,
-    create_auto_contract_document
+    create_auto_contract_document,
+    get_service_url
 )
 
 

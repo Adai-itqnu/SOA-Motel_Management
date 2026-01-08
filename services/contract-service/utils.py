@@ -1,8 +1,31 @@
 # Contract Service - Utility Functions
 import datetime
 import uuid
+import os
+import requests
 from bson import ObjectId
 from model import contracts_collection
+from config import CONSUL_HOST, CONSUL_PORT
+
+
+# ============== Service Discovery ==============
+
+def get_service_url(service_name):
+    """Get service URL dynamically from Consul."""
+    try:
+        consul_url = f"http://{CONSUL_HOST}:{CONSUL_PORT}/v1/catalog/service/{service_name}"
+        response = requests.get(consul_url, timeout=5)
+        if response.ok and response.json():
+            service = response.json()[0]
+            host = service.get('ServiceAddress') or service.get('Address') or service_name
+            port = service.get('ServicePort')
+            if host and port:
+                return f"http://{host}:{port}"
+    except Exception as e:
+        print(f"[Consul] Error getting {service_name} URL: {e}")
+    
+    fallback_port = os.getenv(f"{service_name.upper().replace('-', '_')}_PORT", "80")
+    return f"http://{service_name}:{fallback_port}"
 
 
 # ============== Timestamp & ID ==============

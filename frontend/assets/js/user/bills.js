@@ -21,7 +21,88 @@ document.addEventListener("DOMContentLoaded", () => {
   wireListActions();
   wireModal();
   loadBills();
+  checkVNPayResult();
 });
+
+function checkVNPayResult() {
+  const params = new URLSearchParams(window.location.search);
+  const vnpayStatus = params.get("vnpay");
+  if (!vnpayStatus) return;
+
+  const billId = params.get("bill_id");
+
+  // Clean URL
+  window.history.replaceState({}, "", "/user/bills.html");
+
+  let cfg = { 
+    title: "Thanh toán", 
+    msg: "", 
+    bgClass: "bg-green-500",
+    icon: "check_circle"
+  };
+
+  if (vnpayStatus === "success") {
+    cfg = {
+      title: "Thanh toán hóa đơn thành công!",
+      msg: billId ? `Hóa đơn ${billId} đã được thanh toán.` : "Giao dịch đã được xác nhận.",
+      bgClass: "bg-green-500",
+      icon: "check_circle"
+    };
+  } else if (vnpayStatus === "cancel") {
+    cfg = {
+      title: "Thanh toán bị hủy",
+      msg: "Bạn đã hủy giao dịch thanh toán hóa đơn.",
+      bgClass: "bg-amber-500",
+      icon: "warning"
+    };
+  } else if (vnpayStatus === "pending") {
+    cfg = {
+      title: "Đang xử lý",
+      msg: "Giao dịch thanh toán hóa đơn đang chờ xác nhận...",
+      bgClass: "bg-blue-500",
+      icon: "pending"
+    };
+  } else {
+    cfg = {
+      title: "Thanh toán thất bại",
+      msg: "Có lỗi xảy ra trong quá trình thanh toán hóa đơn.",
+      bgClass: "bg-red-500",
+      icon: "error"
+    };
+  }
+
+  // Create and show toast notification
+  const toast = document.createElement("div");
+  toast.className = "fixed top-20 left-1/2 -translate-x-1/2 z-50 max-w-2xl w-full px-4";
+  toast.style.transition = "transform 0.4s ease-out, opacity 0.4s ease-out";
+  toast.style.transform = "translateY(-100%)";
+  toast.style.opacity = "0";
+  
+  toast.innerHTML = `
+    <div class="flex items-center justify-center gap-3 ${cfg.bgClass} text-white px-6 py-3 rounded-xl shadow-lg">
+      <span class="material-symbols-outlined text-xl">${cfg.icon}</span>
+      <span class="font-medium">${cfg.title}</span>
+      <span class="text-white/90">${cfg.msg}</span>
+      <button onclick="this.closest('div').parentElement.remove();" class="ml-4 hover:bg-white/20 rounded-full p-1 transition-colors">
+        <span class="material-symbols-outlined text-lg">close</span>
+      </button>
+    </div>
+  `;
+  document.body.appendChild(toast);
+  
+  // Slide down animation
+  setTimeout(() => {
+    toast.style.transform = "translateY(0)";
+    toast.style.opacity = "1";
+  }, 100);
+
+  // Auto hide after 8 seconds
+  setTimeout(() => {
+    toast.style.transform = "translateY(-100%)";
+    toast.style.opacity = "0";
+    setTimeout(() => toast.remove(), 400);
+  }, 8000);
+}
 
 function wireTabs() {
   document.querySelectorAll("[data-filter]").forEach((btn) => {
@@ -533,7 +614,7 @@ async function startPayment(bill) {
   // Try to create payment via API
   try {
     const billId = bill._id || bill.id;
-    const res = await API.post("/payments/vnpay/bill/create", {
+    const res = await API.post("/vnpay/bill", {
       bill_id: billId,
     });
 

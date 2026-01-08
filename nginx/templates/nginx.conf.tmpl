@@ -256,12 +256,12 @@ http {
             return 503 '{"error": "Service unavailable", "message": "booking-service is not available"}';
         }
 
-        # Payment Service API
-        location /api/payments {
+        # VNPay Payment API (Blueprint in payment-service)
+        location /api/vnpay {
             limit_req zone=api_limit burst=20 nodelay;
 
             proxy_intercept_errors on;
-            error_page 502 503 504 = @payment_error;
+            error_page 502 503 504 = @vnpay_error;
 
             proxy_pass http://payment_service;
             proxy_http_version 1.1;
@@ -281,10 +281,10 @@ http {
             }
         }
 
-        location @payment_error {
+        location @vnpay_error {
             default_type application/json;
             add_header 'Access-Control-Allow-Origin' '*' always;
-            return 503 '{"error": "Service unavailable", "message": "payment-service is not available"}';
+            return 503 '{"error": "Service unavailable", "message": "payment-service (vnpay) is not available"}';
         }
 
         # Contract Service API

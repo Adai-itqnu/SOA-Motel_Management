@@ -228,7 +228,7 @@
         async function generateBills() {
             if (!confirm('Tạo hóa đơn tháng này cho tất cả hợp đồng đang active?\n\nLưu ý: Hóa đơn tháng đầu sẽ tính theo số ngày thực tế.')) return;
             try {
-                const res = await API.post('/bills/generate-monthly', {});
+                const res = await API.post('/bills/generate', {});
                 if (res.ok) {
                     alert('Tạo hóa đơn thành công!');
                     loadData();

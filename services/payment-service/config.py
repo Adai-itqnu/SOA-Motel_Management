@@ -26,7 +26,7 @@ class Config:
     VNPAY_TMN_CODE = os.getenv('VNPAY_TMN_CODE', '729I87YR').strip()
     VNPAY_HASH_SECRET = os.getenv('VNPAY_HASH_SECRET', 'ZKPI2R2IFEA4VIA1WMCMI65XQUMQHTWT').strip()
     VNPAY_URL = os.getenv('VNPAY_URL', 'https://sandbox.vnpayment.vn/paymentv2/vpcpay.html').strip()
-    VNPAY_RETURN_URL = os.getenv('VNPAY_RETURN_URL', 'http://localhost/api/payments/vnpay/return').strip()
+    VNPAY_RETURN_URL = os.getenv('VNPAY_RETURN_URL', 'http://localhost/api/vnpay/return').strip()
     VNPAY_IPN_URL = os.getenv('VNPAY_IPN_URL', '').strip()
     VNPAY_CONFIRM_MODE = os.getenv('VNPAY_CONFIRM_MODE', 'return').strip().lower()
     

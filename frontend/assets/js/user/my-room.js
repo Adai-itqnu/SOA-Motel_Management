@@ -381,7 +381,7 @@ async function confirmCheckInFor(paymentId, roomId, checkInDate) {
 
     // No booking found, try check-in from payment
     btn.textContent = "Đang tạo hợp đồng...";
-    const checkInRes = await API.post("/bookings/check-in-from-payment", {
+    const checkInRes = await API.post("/bookings/checkin-payment", {
       payment_id: paymentId,
       room_id: roomId,
       check_in_date: checkInDate
@@ -583,7 +583,7 @@ async function confirmCheckIn() {
       // If no booking found, try to create contract directly via room reservation
       if (btnText) btnText.textContent = "Đang tạo hợp đồng...";
       
-      const checkInRes = await API.post("/bookings/check-in-from-payment", {
+      const checkInRes = await API.post("/bookings/checkin-payment", {
         payment_id: currentDepositPayment._id,
         room_id: currentDepositPayment.room_id,
         check_in_date: currentDepositPayment.check_in_date
@@ -804,7 +804,7 @@ async function submitIncidentReport() {
   
   try {
     // Send report to notification service
-    const res = await API.post("/notifications/report-issue", {
+    const res = await API.post("/notifications/issue", {
       issue_type: issueType,
       issue_label: issueLabel,
       content: content,

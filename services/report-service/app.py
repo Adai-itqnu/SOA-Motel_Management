@@ -7,14 +7,12 @@ import atexit
 from config import Config
 from model import bills_collection
 from decorators import token_required, admin_required
-from services import (
-    get_room_stats, get_contracts, get_contract_detail,
-    get_room_contracts, get_room_detail, get_payments
-)
 from utils import (
     get_timestamp, format_bill, calculate_bill_amounts,
     get_bill_stats, get_total_revenue, get_total_debt,
-    get_revenue_by_month, get_deposits_by_month
+    get_revenue_by_month, get_deposits_by_month,
+    get_room_stats, get_contracts, get_contract_detail,
+    get_room_contracts, get_room_detail, get_payments
 )
 from service_registry import register_service, deregister_service
 

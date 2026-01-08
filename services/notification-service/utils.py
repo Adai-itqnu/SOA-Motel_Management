@@ -1,8 +1,46 @@
 # Notification Service - Utility Functions
 import datetime
 import uuid
+import os
+import requests
 from model import notifications_collection
+from config import CONSUL_HOST, CONSUL_PORT, INTERNAL_API_KEY
 
+
+# ============== Service Discovery ==============
+
+def get_service_url(service_name):
+    """Get service URL dynamically from Consul."""
+    try:
+        consul_url = f"http://{CONSUL_HOST}:{CONSUL_PORT}/v1/catalog/service/{service_name}"
+        response = requests.get(consul_url, timeout=5)
+        if response.ok and response.json():
+            service = response.json()[0]
+            host = service.get('ServiceAddress') or service.get('Address') or service_name
+            port = service.get('ServicePort')
+            if host and port:
+                return f"http://{host}:{port}"
+    except Exception as e:
+        print(f"[Consul] Error getting {service_name} URL: {e}")
+    
+    fallback_port = os.getenv(f"{service_name.upper().replace('-', '_')}_PORT", "80")
+    return f"http://{service_name}:{fallback_port}"
+
+
+def fetch_unpaid_bills():
+    """Fetch unpaid bills from bill-service."""
+    try:
+        bill_service_url = get_service_url('bill-service')
+        response = requests.get(
+            f"{bill_service_url}/internal/bills/unpaid",
+            headers={'X-Internal-Api-Key': INTERNAL_API_KEY},
+            timeout=10
+        )
+        if response.ok:
+            return response.json().get('bills', [])
+    except Exception as e:
+        print(f"Error fetching unpaid bills: {e}")
+    return []
 
 def get_timestamp():
     return datetime.datetime.utcnow().isoformat()
