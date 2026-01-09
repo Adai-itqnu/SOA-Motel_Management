@@ -12,9 +12,13 @@ from utils import (
     generate_room_id,
     get_timestamp,
     format_room_response,
-    check_duplicate_room_name
+    check_duplicate_room_name,
+    cleanup_expired_reservations
 )
 from service_registry import register_service, deregister_service
+
+# APScheduler for background jobs
+from apscheduler.schedulers.background import BackgroundScheduler
 
 
 # Initialize Flask app
@@ -24,6 +28,41 @@ CORS(app)
 
 # Register cleanup on exit
 atexit.register(deregister_service)
+
+
+# ============== Background Scheduler ==============
+# Auto cleanup expired reservations every 5 minutes
+
+def scheduled_cleanup_job():
+    """Background job to cleanup expired room reservations."""
+    try:
+        cleaned = cleanup_expired_reservations()
+        if cleaned:
+            print(f"[Scheduler] Auto-cleaned {len(cleaned)} expired reservations: {cleaned}")
+    except Exception as e:
+        print(f"[Scheduler] Error during cleanup: {e}")
+
+
+# Initialize scheduler (only in main process, not in reloader)
+scheduler = BackgroundScheduler(daemon=True)
+scheduler.add_job(
+    scheduled_cleanup_job,
+    'interval',
+    minutes=5,  # Run every 5 minutes
+    id='cleanup_expired_reservations',
+    replace_existing=True
+)
+
+
+def start_scheduler():
+    """Start the background scheduler if not already running."""
+    if not scheduler.running:
+        scheduler.start()
+        print(f"[Scheduler] Started - will cleanup expired reservations every 5 minutes")
+
+
+# Shutdown scheduler on exit
+atexit.register(lambda: scheduler.shutdown(wait=False) if scheduler.running else None)
 
 
 # ============== Health Check ==============
@@ -536,16 +575,67 @@ def internal_vacate_room(room_id):
     return jsonify({'message': 'Đã nhả phòng, phòng trở lại trạng thái trống.', 'room_id': room_id, 'status': Config.STATUS_AVAILABLE}), 200
 
 
+# ============== Reservation Cleanup APIs ==============
+
+@app.route('/internal/rooms/reservations/cleanup', methods=['POST'])
+@internal_api_required
+# Internal API for scheduled jobs to cleanup expired reservations
+def internal_cleanup_expired_reservations():
+    data = request.get_json() or {}
+    timeout_minutes = data.get('timeout_minutes')
+    
+    cleaned_room_ids = cleanup_expired_reservations(timeout_minutes)
+    
+    return jsonify({
+        'message': f'Đã cleanup {len(cleaned_room_ids)} phòng hết hạn giữ chỗ.',
+        'cleaned_rooms': cleaned_room_ids,
+        'count': len(cleaned_room_ids)
+    }), 200
+
+
+@app.route('/api/rooms/reservations/cleanup', methods=['POST'])
+@token_required
+@admin_required
+# Admin API to manually trigger cleanup of expired reservations
+def admin_cleanup_expired_reservations(current_user):
+    data = request.get_json() or {}
+    timeout_minutes = data.get('timeout_minutes')
+    
+    cleaned_room_ids = cleanup_expired_reservations(timeout_minutes)
+    
+    if len(cleaned_room_ids) == 0:
+        return jsonify({
+            'message': 'Không có phòng nào cần cleanup.',
+            'cleaned_rooms': [],
+            'count': 0
+        }), 200
+    
+    return jsonify({
+        'message': f'Đã cleanup {len(cleaned_room_ids)} phòng hết hạn giữ chỗ.',
+        'cleaned_rooms': cleaned_room_ids,
+        'count': len(cleaned_room_ids)
+    }), 200
+
+
 # ============== Application Entry Point ==============
 
 if __name__ == '__main__':
+    import os
+    
     print(f"\n{'='*50}")
     print(f"  {Config.SERVICE_NAME.upper()}")
     print(f"  Port: {Config.SERVICE_PORT}")
     print(f"  Debug: {Config.DEBUG}")
+    print(f"  Reservation Timeout: {Config.RESERVATION_TIMEOUT_MINUTES} minutes")
     print(f"{'='*50}\n")
     
     register_service()
+    
+    # Start scheduler (avoid duplicate in Flask reloader)
+    # WERKZEUG_RUN_MAIN is set by Flask when running the actual server (not reloader)
+    if os.environ.get('WERKZEUG_RUN_MAIN') == 'true' or not Config.DEBUG:
+        start_scheduler()
+    
     app.run(
         host='0.0.0.0',
         port=Config.SERVICE_PORT,

@@ -37,6 +37,9 @@ class Config:
     DEFAULT_ELECTRIC_PRICE = 3500
     DEFAULT_WATER_PRICE = 20000
     DEFAULT_PAYMENT_DAY = 5
+    
+    # Reservation timeout (minutes) - auto-release pending_payment reservations after this time
+    RESERVATION_TIMEOUT_MINUTES = int(os.getenv('RESERVATION_TIMEOUT_MINUTES', '10'))
 
 
 # Backward compatibility

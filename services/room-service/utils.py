@@ -84,3 +84,46 @@ def check_duplicate_room_name(name, exclude_room_id=None):
     if exclude_room_id:
         query['_id'] = {'$ne': exclude_room_id}
     return rooms_collection.find_one(query) is not None
+
+
+def cleanup_expired_reservations(timeout_minutes=None):
+    """
+    Clean up rooms that have been in 'pending_payment' status for too long.
+    Returns list of room IDs that were cleaned up.
+    """
+    if timeout_minutes is None:
+        timeout_minutes = Config.RESERVATION_TIMEOUT_MINUTES
+    
+    # Calculate cutoff time
+    cutoff_time = datetime.datetime.utcnow() - datetime.timedelta(minutes=timeout_minutes)
+    cutoff_iso = cutoff_time.isoformat()
+    
+    # Find expired reservations
+    query = {
+        'status': Config.STATUS_RESERVED,
+        'reservation_status': 'pending_payment',
+        'reserved_at': {'$lt': cutoff_iso}
+    }
+    
+    expired_rooms = list(rooms_collection.find(query))
+    
+    if not expired_rooms:
+        return []
+    
+    # Collect room IDs for return
+    cleaned_room_ids = [room['_id'] for room in expired_rooms]
+    
+    # Release all expired reservations
+    rooms_collection.update_many(
+        query,
+        {'$set': {
+            'status': Config.STATUS_AVAILABLE,
+            'reserved_by_user_id': None,
+            'reserved_payment_id': None,
+            'reservation_status': None,
+            'reserved_at': None,
+            'updated_at': get_timestamp()
+        }}
+    )
+    
+    return cleaned_room_ids
